@@ -357,6 +357,7 @@ namespace bt9 {
                             return edge_it->edgeIndex();
                         }
                     }
+                    edge_it++;
                 }
                 
                 if (at_least_one) {
