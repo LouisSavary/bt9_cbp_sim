@@ -151,8 +151,8 @@ int main(int argc, char* argv[]){
   ///////////////////////////////////////////////
     
     PREDICTOR  *brpred = new PREDICTOR();  // this instantiates the predictor code
-    int misprepred[NB_PRE_PRED] = {0};
-    int prepreds[NB_PRE_PRED][NB_PRE_PRED+1] = {{0}};
+    long int misprepred[NB_PRE_PRED] = {0};
+    long long int prepreds[NB_PRE_PRED][NB_PRE_PRED+1] = {{0}};
     float trace_mispred_ponder = 0.f;
     uint32_t id_circ_ppred = 0;
 
@@ -412,9 +412,7 @@ int main(int argc, char* argv[]){
               snd_pred->UpdatePredictor(pc_pred, prepred_dir, prepred_dir, pc_pred_bis);
               pc_pred = pc_pred_bis;
               
-            printf("allo ?\t");
             }
-            printf("\r");
 
             delete snd_pred;
 
@@ -481,7 +479,7 @@ int main(int argc, char* argv[]){
 //ver2      printf("  NUM_CONDITIONAL_BR_BTB_DYN  \t : %10llu",   btb_dyn_cond_branch_instruction_counter);
       printf("  NUM_MISPREDICTIONS          \t : %10llu\n",   numMispred);
       for (int i = 0; i < NB_PRE_PRED; i ++) {
-        printf("     NUM_MISPREDICTIONS %2d   \t : %10d\n", i,  misprepred[i]);
+        printf("     NUM_MISPREDICTIONS %2d   \t : %10ld\n", i,  misprepred[i]);
       }
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_MISS \t : %10llu",   numMispred_btbMISS);
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_ANSF \t : %10llu",   numMispred_btbANSF);
