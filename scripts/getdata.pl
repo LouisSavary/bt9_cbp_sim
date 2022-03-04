@@ -12,7 +12,7 @@ $statthrd  = "MISPRED_TRACE";
 $wsuite    = "all";
 $max_dirs  = 1024;
 $amean     = 1;  # always print amean
-$prepred   = 6
+$prepred   = 6;
 
 #####################################
 ######### USAGE OPTIONS      ########
