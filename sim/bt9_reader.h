@@ -336,15 +336,17 @@ namespace bt9 {
             }
 
             /// move in the graph by taking a branch
-            uint32_t nextNode(bool taken=true) {
+                // find a branch that starts from node
+            uint32_t nextConditionalNode(bool taken=true) {
                 // index get the id of the new node
                 BT9ReaderNodeRecord node  = this->operator*();
                 bool conditional = node.brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
                 bool at_least_one = false;
-
+    
                 EdgeTableIterator edge_it = bt9_reader_->edgeTableBegin_();
                 while (edge_it != bt9_reader_->edgeTableEnd_()) {
-                    if (edge_it->srcNodeIndex() == this->index_) {
+                    if (edge_it->srcNodeIndex() == index_) {
+                        // printf("%u %u\n", edge_it->edgeIndex(), index_);
                         if (conditional) {
                             if (edge_it->isTakenPath() == taken) {
                                 this->index_ = edge_it->destNodeIndex();
@@ -354,12 +356,12 @@ namespace bt9 {
                             }
                         } else {
                             this->index_ = edge_it->destNodeIndex();
-                            return edge_it->edgeIndex();
+                            return nextConditionalNode(taken);
+                            // return edge_it->edgeIndex();
                         }
                     }
                     edge_it++;
                 }
-                
                 if (at_least_one) {
                     //not taken -> find the next br (next instr, else it would have an edge)
                     uint64_t nextaddr = node.brVirtualAddr() + node.brOpcodeSize();
@@ -367,14 +369,14 @@ namespace bt9 {
 
                     while (node_it != bt9_reader_->nodeTableEnd_()) {
                         if (node_it->brVirtualAddr() == nextaddr) {
-                            this->index_ == node_it->brNodeIndex();
+                            this->index_ = node_it->brNodeIndex();
                             return -1;
                         }
+                        node_it++;
                     }
                 }
-
-                // should not happen
-                assert(false && "couldn't find a next node after branch");
+                // printf("\t1");
+                // happen on program's end
                 return -2;
             }
 

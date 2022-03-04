@@ -20,6 +20,10 @@ using namespace std;
 #define COUNTER     unsigned long long
 #define NB_PRE_PRED 6
 
+// int misprepred[NB_PRE_PRED] = {0};
+// int prepreds[NB_PRE_PRED][NB_PRE_PRED+1] = {{0}};
+// float trace_mispred_ponder = 0.f;
+// uint32_t id_circ_ppred = 0;
 
 void CheckHeartBeat(UINT64 numIter, UINT64 numMispred)
 {
@@ -39,7 +43,7 @@ void CheckHeartBeat(UINT64 numIter, UINT64 numMispred)
  UINT64 d1B   =1000000000;
  UINT64 d10B  =10000000000;
 
-
+  bool heartbeat=false;
 //  if(numIter % lineInterval == 0){ //prints line every 30 million branches
 //    printf("\n");
 //    fflush(stdout);
@@ -47,62 +51,90 @@ void CheckHeartBeat(UINT64 numIter, UINT64 numMispred)
   if(numIter == d1K){ //prints MPKI after 100K branches
     printf("  MPKBr_1K         \t : %10.4f",   1000.0*(double)(numMispred)/(double)(numIter));   
     fflush(stdout);
+    heartbeat = true;
   }
 
   if(numIter == d10K){ //prints MPKI after 100K branches
     printf("  MPKBr_10K         \t : %10.4f",   1000.0*(double)(numMispred)/(double)(numIter));   
     fflush(stdout);
+    heartbeat = true;
   }
   
   if(numIter == d100K){ //prints MPKI after 100K branches
     printf("  MPKBr_100K         \t : %10.4f",   1000.0*(double)(numMispred)/(double)(numIter));   
     fflush(stdout);
+    heartbeat = true;
   }
   if(numIter == d1M){
     printf("  MPKBr_1M         \t : %10.4f",   1000.0*(double)(numMispred)/(double)(numIter)); 
     fflush(stdout);
+    heartbeat = true;
   }
 
   if(numIter == d10M){ //prints MPKI after 100K branches
     printf("  MPKBr_10M         \t : %10.4f",   1000.0*(double)(numMispred)/(double)(numIter));   
     fflush(stdout);
+    heartbeat = true;
   }
 
   if(numIter == d30M){ //prints MPKI after 100K branches
     printf("  MPKBr_30M         \t : %10.4f",   1000.0*(double)(numMispred)/(double)(numIter));   
     fflush(stdout);
+    heartbeat = true;
   }
 
   if(numIter == d60M){ //prints MPKI after 100K branches
     printf("  MPKBr_60M         \t : %10.4f",   1000.0*(double)(numMispred)/(double)(numIter));   
     fflush(stdout);
+    heartbeat = true;
   }
 
   if(numIter == d100M){ //prints MPKI after 100K branches
     printf("  MPKBr_100M         \t : %10.4f",   1000.0*(double)(numMispred)/(double)(numIter));   
     fflush(stdout);
+    heartbeat = true;
   }
   
   if(numIter == d300M){ //prints MPKI after 100K branches
     printf("  MPKBr_300M         \t : %10.4f",   1000.0*(double)(numMispred)/(double)(numIter));   
     fflush(stdout);
+    heartbeat = true;
   }
 
   if(numIter == d600M){ //prints MPKI after 100K branches
     printf("  MPKBr_600M         \t : %10.4f",   1000.0*(double)(numMispred)/(double)(numIter));   
     fflush(stdout);
+    heartbeat = true;
   }
 
   if(numIter == d1B){ //prints MPKI after 100K branches
     printf("  MPKBr_1B         \t : %10.4f",   1000.0*(double)(numMispred)/(double)(numIter));   
     fflush(stdout);
+    heartbeat = true;
   }
   
   if(numIter == d10B){ //prints MPKI after 100K branches
     printf("  MPKBr_10B         \t : %10.4f",   1000.0*(double)(numMispred)/(double)(numIter));   
     fflush(stdout);
+    heartbeat = true;
   }
  
+  // if (heartbeat) {
+  //   //print prepreds
+  //   printf("\n");
+  //   for (int i = 0; i < NB_PRE_PRED; i ++) {
+  //     for (int j = 0; j <= NB_PRE_PRED; j ++ )
+  //       printf("%d\t", prepreds[i][j]);
+  //     printf("\n");
+  //   }
+  //   printf("\n");
+  //   for(int i = 0; i < NB_PRE_PRED; i ++) {
+  //     printf("%d\t", misprepred[i]);
+  //   }
+  //   printf("\n %d \n", id_circ_ppred);
+
+  // }
+
 }//void CheckHeartBeat
 
 // usage: predictor <trace>
@@ -119,10 +151,14 @@ int main(int argc, char* argv[]){
   ///////////////////////////////////////////////
     
     PREDICTOR  *brpred = new PREDICTOR();  // this instantiates the predictor code
-    uint32_t misprepred[NB_PRE_PRED] = {};
+    int misprepred[NB_PRE_PRED] = {0};
+    int prepreds[NB_PRE_PRED][NB_PRE_PRED+1] = {{0}};
     float trace_mispred_ponder = 0.f;
-    int prepreds[NB_PRE_PRED][NB_PRE_PRED+1] = {{}};
     uint32_t id_circ_ppred = 0;
+
+    for (int i = 0; i < NB_PRE_PRED; i ++){
+      prepreds[i][NB_PRE_PRED] = -1;
+    } 
 
   ///////////////////////////////////////////////
   // read each trace recrod, simulate until done
@@ -141,7 +177,7 @@ int main(int argc, char* argv[]){
     bt9_reader.header.getFieldValueStr(key, value);
     UINT64     branch_instruction_counter = std::stoull(value, nullptr, 0);
     UINT64     numMispred =0;  
-    bt9_reader.edge_table;
+    
 //ver2    UINT64     numMispred_btbMISS =0;  
 //ver2    UINT64     numMispred_btbANSF =0;  
 //ver2    UINT64     numMispred_btbATSF =0;  
@@ -310,16 +346,22 @@ int main(int argc, char* argv[]){
 //ver2            }
 //ver2            //puts("");
 
+
+            // STATS COLLECT ///////////////////////////////////////////////////////////////////
+
             for (int i = 0; i < NB_PRE_PRED && i < cond_branch_instruction_counter; i++) {
               // prepreds[i][NB_PRE_PRED+1] += it->getEdge()->nonBrInstCnt();
+              uint32_t id_j = (id_circ_ppred - i -1 + NB_PRE_PRED) %NB_PRE_PRED;
               if (prepreds[i][NB_PRE_PRED] < 0) {
-                uint32_t pred = prepreds[i][(id_circ_ppred - i -1 + NB_PRE_PRED) %NB_PRE_PRED];
-                if (pred != it->getEdge()->edgeIndex()) {
-                  misprepred[i]++;
-                  prepreds[i][NB_PRE_PRED] = i;
+                int pred = prepreds[i][id_j];
+                // printf("%d %u\n", pred, it->getEdge()->edgeIndex());
+
+                if (pred != it->getEdge()->edgeIndex() && pred >= 0 ) {
+                  misprepred[id_j] ++;
+                  prepreds[i][NB_PRE_PRED] = id_j;
                 }
               } else {
-                misprepred[i]++;
+                misprepred[id_j] ++;
               }
             }
 
@@ -336,37 +378,46 @@ int main(int argc, char* argv[]){
                     num += edgesize;
                 } 
                 
-                prepreds[id_circ_ppred][i] = 0;
+                prepreds[id_circ_ppred][i] = 0; //reset
               }
-              trace_mispred_ponder += (float)(num/den);
+              trace_mispred_ponder += ((float)num/(float)den);
             }
-            prepreds[id_circ_ppred][NB_PRE_PRED] = -1;
+            prepreds[id_circ_ppred][NB_PRE_PRED] = -1; //reset
             
 
-
+            // PREDICTION //////////////////////////////////////////////////////////////////////
             bool predDir = false;
             
             
             predDir = brpred->GetPrediction(PC);
             brpred->UpdatePredictor(PC, branchTaken, predDir, branchTarget);
-
+            // printf("%u\t", it->getSrcNode()->brNodeIndex());
               //prepredictions
             // init 
             snd_pred = new PREDICTOR(brpred);
             bt9::BT9Reader::NodeTableIterator node_it = bt9_reader.node_table.begin();
-            
+            node_it+= it->getDestNode()->brNodeIndex();
             // i = 0
             bool prepred_dir = predDir;
-            prepreds[id_circ_ppred][0] = node_it.nextNode(prepred_dir);
-            
+            prepreds[id_circ_ppred][0] = node_it.nextConditionalNode(prepred_dir);
+            // printf("%d(%u)\t", prepreds[id_circ_ppred][0], prepred_dir);
+
             uint64_t pc_pred = node_it->brVirtualAddr();
             for (int i = 1; i < NB_PRE_PRED; i ++) {
               prepred_dir = snd_pred->GetPrediction(pc_pred);
-              prepreds[id_circ_ppred][i] = node_it.nextNode(prepred_dir);
-              pc_pred = node_it->brVirtualAddr();
-              snd_pred->UpdatePredictor(pc_pred, prepred_dir, prepred_dir, pc_pred);
+              prepreds[id_circ_ppred][i] = node_it.nextConditionalNode(prepred_dir);
+              // printf("%d(%u)\t", prepreds[id_circ_ppred][i], prepred_dir);
+              if (prepreds[id_circ_ppred][i] == -2) break; // program end
+              uint64_t pc_pred_bis = node_it->brVirtualAddr();
+              snd_pred->UpdatePredictor(pc_pred, prepred_dir, prepred_dir, pc_pred_bis);
+              pc_pred = pc_pred_bis;
+              
+            printf("allo ?\t");
             }
-            
+            printf("\r");
+
+            delete snd_pred;
+
             if(predDir != branchTaken){
               prepreds[id_circ_ppred][NB_PRE_PRED] = 0;
               numMispred++; // update mispred stats
@@ -430,7 +481,7 @@ int main(int argc, char* argv[]){
 //ver2      printf("  NUM_CONDITIONAL_BR_BTB_DYN  \t : %10llu",   btb_dyn_cond_branch_instruction_counter);
       printf("  NUM_MISPREDICTIONS          \t : %10llu\n",   numMispred);
       for (int i = 0; i < NB_PRE_PRED; i ++) {
-        printf("     NUM_MISPREDICTIONS %2d   \t : %10llu\n", i,  misprepred[i]);
+        printf("     NUM_MISPREDICTIONS %2d   \t : %10d\n", i,  misprepred[i]);
       }
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_MISS \t : %10llu",   numMispred_btbMISS);
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_ANSF \t : %10llu",   numMispred_btbANSF);
@@ -438,7 +489,7 @@ int main(int argc, char* argv[]){
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_DYN  \t : %10llu",   numMispred_btbDYN);
       printf("  MISPRED_PER_1K_INST         \t : %10.4f\n",   1000.0*(double)(numMispred)/(double)(total_instruction_counter));
       for (int i = 0; i < NB_PRE_PRED; i ++) {
-        printf("     MISPRED_PER_1K_INST %2d  \t : %10llu\n", i,  1000.0*(double)(misprepred[i])/(double)(total_instruction_counter));
+        printf("     MISPRED_PER_1K_INST %2d  \t : %10.4f\n", i,  1000.0*(double)(misprepred[i])/(double)(total_instruction_counter));
       }
       printf("  MISPRED_TRACE               \t : %10.4f\n",   trace_mispred_ponder);
       
