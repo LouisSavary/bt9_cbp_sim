@@ -87,13 +87,13 @@ print_header();
 print_stats();    
 print_amean()     if($amean);
 
-$stat = "MISPRED_TRACE";
-init_stats();
-get_stats();
+# $stat = "MISPRED_TRACE";
+# init_stats();
+# get_stats();
 
-print_header();    
-print_stats();    
-print_amean()     if($amean);
+# print_header();    
+# print_stats();    
+# print_amean()     if($amean);
 
 
 ########################## INIT STATS ####################

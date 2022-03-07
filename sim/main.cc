@@ -479,7 +479,7 @@ int main(int argc, char* argv[]){
 //ver2      printf("  NUM_CONDITIONAL_BR_BTB_DYN  \t : %10llu",   btb_dyn_cond_branch_instruction_counter);
       printf("  NUM_MISPREDICTIONS          \t : %10llu\n",   numMispred);
       for (int i = 0; i < NB_PRE_PRED; i ++) {
-        printf("     NUM_MISPREDICTIONS %2d   \t : %10ld\n", i,  misprepred[i]);
+        printf("     NUM_MISPREDICTIONS %2d   \t : %10ld\n", i+1,  misprepred[i]);
       }
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_MISS \t : %10llu",   numMispred_btbMISS);
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_ANSF \t : %10llu",   numMispred_btbANSF);
@@ -487,7 +487,7 @@ int main(int argc, char* argv[]){
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_DYN  \t : %10llu",   numMispred_btbDYN);
       printf("  MISPRED_PER_1K_INST         \t : %10.4f\n",   1000.0*(double)(numMispred)/(double)(total_instruction_counter));
       for (int i = 0; i < NB_PRE_PRED; i ++) {
-        printf("     MISPRED_PER_1K_INST %2d  \t : %10.4f\n", i,  1000.0*(double)(misprepred[i])/(double)(total_instruction_counter));
+        printf("     MISPRED_PER_1K_INST %2d  \t : %10.4f\n", i+1,  1000.0*(double)(misprepred[i])/(double)(total_instruction_counter));
       }
       printf("  MISPRED_TRACE               \t : %10.4f\n",   trace_mispred_ponder);
       
