@@ -19,7 +19,7 @@ $prepred   = 6;
 #####################################
 
 $debug     = 0;
-$noxxxx    = 0;
+$noxxxx    = 1;
 
 
 #####################################
@@ -137,7 +137,7 @@ sub get_stats{
                 if($words[$jj] && ($words[$jj] eq $stat) ){
                     $pos = $jj+2;
                     $val = $words[$pos];
-                    $data[$dirnum][$ii] += $val;
+                    $data[$dirnum][$ii][0] += $val;
                     printf "stat match for $stat found for $_" if($debug);
                     $found++;
                 }
@@ -147,13 +147,13 @@ sub get_stats{
                     $val = $words[$pos];
                     $val2= $words[$pos2];
                     $data[$dirnum][$ii][$val2] += $val;
-                    printf "stat match for $stat found for $_" if($debug);
+                    printf "stat match for $stat $val2 found for $_" if($debug);
                     #$found++;
                 }
                 if($words[$jj] && ($words[$jj] eq $statthrd) ){
                     $pos = $jj+2;
                     $val = $words[$pos];
-                    $data[$dirnum][$ii][$prepred] += $val;
+                    $data[$dirnum][$ii][$prepred+1] += $val;
                     printf "stat match for $stat found for $_" if($debug);
                     $found++;
                 }
@@ -196,8 +196,10 @@ sub print_stats{
         printf("\n%-20s\t", $wstring);
 
         for($dirnum=0; $dirnum < @dirs ; $dirnum++){
-            $val     = $data[$dirnum][$ii];
-            print_val();
+            for ($iii = 0; $iii < $prepred+2; $iii++){
+                $val     = $data[$dirnum][$ii][$iii];
+                print_val();
+            }
         }
     }
 
@@ -227,7 +229,7 @@ sub print_amean{
 	    for($statnum=0; $statnum <= $prepred+1; $statnum++ ){
             $dir_sums[$dirnum][$statnum]=0;
             for($ii=0; $ii< $num_w; $ii++){
-                $dir_sums[$dirnum][$ii][$statnum] += $data[$dirnum][$ii][$statnum];
+                $dir_sums[$dirnum][$statnum] += $data[$dirnum][$ii][$statnum];
             }
         }
     }
@@ -240,7 +242,7 @@ sub print_amean{
             print_val();
             
             if ($statnum < $prepred){
-                printf("\n%-19s %1d\t", "AMEAN", $statnum+1);
+                printf("\n%-18s %d\t", "AMEAN", $statnum+1);
             }
             if ($statnum == $prepred){
                 printf("\n%-20s\t", "AMEAN TRACE");
