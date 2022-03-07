@@ -391,7 +391,7 @@ int main(int argc, char* argv[]){
             
             predDir = brpred->GetPrediction(PC);
             brpred->UpdatePredictor(PC, branchTaken, predDir, branchTarget);
-            // printf("%u\t", it->getSrcNode()->brNodeIndex());
+           
               //prepredictions
             // init 
             snd_pred = new PREDICTOR(brpred);
@@ -400,14 +400,17 @@ int main(int argc, char* argv[]){
             // i = 0
             bool prepred_dir = predDir;
             prepreds[id_circ_ppred][0] = node_it.nextConditionalNode(prepred_dir);
-            // printf("%d(%u)\t", prepreds[id_circ_ppred][0], prepred_dir);
+          
 
             uint64_t pc_pred = node_it->brVirtualAddr();
             for (int i = 1; i < NB_PRE_PRED; i ++) {
               prepred_dir = snd_pred->GetPrediction(pc_pred);
               prepreds[id_circ_ppred][i] = node_it.nextConditionalNode(prepred_dir);
-              // printf("%d(%u)\t", prepreds[id_circ_ppred][i], prepred_dir);
-              if (prepreds[id_circ_ppred][i] == -2) break; // program end
+             
+              if (prepreds[id_circ_ppred][i] == -2) //program's end or wrong path
+                while (++i < NB_PRE_PRED) 
+                  prepreds[id_circ_ppred][i] =  -2;
+
               uint64_t pc_pred_bis = node_it->brVirtualAddr();
               snd_pred->UpdatePredictor(pc_pred, prepred_dir, prepred_dir, pc_pred_bis);
               pc_pred = pc_pred_bis;
