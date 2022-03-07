@@ -227,7 +227,7 @@ sub print_amean{
 	    for($statnum=0; $statnum <= $prepred+1; $statnum++ ){
             $dir_sums[$dirnum][$statnum]=0;
             for($ii=0; $ii< $num_w; $ii++){
-                $dir_sums[$dirnum][$statnum] += $data[$dirnum][$ii][$statnum];
+                $dir_sums[$dirnum][$ii][$statnum] += $data[$dirnum][$ii][$statnum];
             }
         }
     }
