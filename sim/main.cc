@@ -152,7 +152,7 @@ int main(int argc, char* argv[]){
     
     PREDICTOR  *brpred = new PREDICTOR();  // this instantiates the predictor code
     long int misprepred[NB_PRE_PRED] = {0};
-    long long int prepreds[NB_PRE_PRED][NB_PRE_PRED+1] = {{0}};
+    long prepreds[NB_PRE_PRED][NB_PRE_PRED+1] = {{0}};
     float trace_mispred_ponder = 0.f;
     uint32_t id_circ_ppred = 0;
 
@@ -348,15 +348,22 @@ int main(int argc, char* argv[]){
 
 
             // STATS COLLECT ///////////////////////////////////////////////////////////////////
-
+  
             for (int i = 0; i < NB_PRE_PRED && i < cond_branch_instruction_counter; i++) {
               // prepreds[i][NB_PRE_PRED+1] += it->getEdge()->nonBrInstCnt();
               uint32_t id_j = (id_circ_ppred - i -1 + NB_PRE_PRED) %NB_PRE_PRED;
+
               if (prepreds[i][NB_PRE_PRED] < 0) {
                 int pred = prepreds[i][id_j];
-                // printf("%d %u\n", pred, it->getEdge()->edgeIndex());
-
-                if (pred != it->getEdge()->edgeIndex() && pred >= 0 ) {
+                
+                if (pred == -1) {
+                  for (int ii = id_j; ii < NB_PRE_PRED-1; ii ++) {
+                    prepreds[i][ii] = prepreds[i][ii+1]; //shift the edges forward
+                  }
+                  prepreds[i][NB_PRE_PRED-1] = -1;
+                  pred = prepreds[i][id_j];
+                }
+                if (pred != it->getEdge()->edgeIndex()) {
                   misprepred[id_j] ++;
                   prepreds[i][NB_PRE_PRED] = id_j;
                 }
@@ -366,24 +373,25 @@ int main(int argc, char* argv[]){
             }
 
             //reset prepred[circ_ppred_id] + calc trace mispred
-            uint32_t num = 0, den = 0;
-            if (prepreds[id_circ_ppred][NB_PRE_PRED] > 0) { // there is a misprediction
-              for (int i = 0; i < NB_PRE_PRED; i ++) { 
-                if (prepreds[id_circ_ppred][i] >= 0) { // edge through a non-empty basic-block 
-                  
-                  uint32_t edgesize = (bt9_reader.edge_table.begin()+prepreds[id_circ_ppred][i])->nonBrInstCnt();
+            uint32_t num = 0, den = 0; 
+            if (prepreds[id_circ_ppred][NB_PRE_PRED] >= 0) { // there is a misprediction
+              for (int i = 0; i < NB_PRE_PRED; i ++) {
+                if (prepreds[id_circ_ppred][i] >= (long)0) { // edge through a non-empty basic-block 
+
+                  bt9::BT9Reader::EdgeTableIterator edgeptr = bt9_reader.edge_table.begin();
+                  edgeptr += prepreds[id_circ_ppred][i];
+                  uint32_t edgesize = edgeptr->nonBrInstCnt() +1; 
                   
                   den += edgesize;
                   if (i >= prepreds[id_circ_ppred][NB_PRE_PRED])
                     num += edgesize;
-                } 
+                }
                 
                 prepreds[id_circ_ppred][i] = 0; //reset
               }
               trace_mispred_ponder += ((float)num/(float)den);
             }
             prepreds[id_circ_ppred][NB_PRE_PRED] = -1; //reset
-            
 
             // PREDICTION //////////////////////////////////////////////////////////////////////
             bool predDir = false;
@@ -397,24 +405,28 @@ int main(int argc, char* argv[]){
             snd_pred = new PREDICTOR(brpred);
             bt9::BT9Reader::NodeTableIterator node_it = bt9_reader.node_table.begin();
             node_it+= it->getDestNode()->brNodeIndex();
-            // i = 0
-            bool prepred_dir = predDir;
-            prepreds[id_circ_ppred][0] = node_it.nextConditionalNode(prepred_dir);
-          
 
+            bool prepred_dir = predDir;
+            prepreds[id_circ_ppred][0] = (int)node_it.nextConditionalNode(prepred_dir);
             uint64_t pc_pred = node_it->brVirtualAddr();
+
+ 
             for (int i = 1; i < NB_PRE_PRED; i ++) {
               prepred_dir = snd_pred->GetPrediction(pc_pred);
-              prepreds[id_circ_ppred][i] = node_it.nextConditionalNode(prepred_dir);
+              prepreds[id_circ_ppred][i] = (int)node_it.nextConditionalNode(prepred_dir);
              
-              if (prepreds[id_circ_ppred][i] == -2) //program's end or wrong path
+              if (prepreds[id_circ_ppred][i] == -2){//program's end or wrong path
                 while (++i < NB_PRE_PRED) 
                   prepreds[id_circ_ppred][i] =  -2;
+                break; // stops prepredictions
+              } 
+
+              // if (prepreds[id_circ_ppred][i] == -1)
 
               uint64_t pc_pred_bis = node_it->brVirtualAddr();
               snd_pred->UpdatePredictor(pc_pred, prepred_dir, prepred_dir, pc_pred_bis);
               pc_pred = pc_pred_bis;
-              
+ 
             }
 
             delete snd_pred;
@@ -451,14 +463,13 @@ int main(int argc, char* argv[]){
             printf("CONDITIONALITY ERROR\n");
             exit(-1); //this should never happen, if it does please email CBP org chair.
           }
-
 /************************************************************************************************************/
         }
         catch (const std::out_of_range & ex) {
           std::cout << ex.what() << '\n';
           break;
         }catch (const std::exception & ex) {
-          std::cout << "dunno exception\n" << ex.what() << '\n';
+          std::cout << "\ndunno exception\n" << ex.what() << '\n';
           break;
         }
       
@@ -488,11 +499,11 @@ int main(int argc, char* argv[]){
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_ANSF \t : %10llu",   numMispred_btbANSF);
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_ATSF \t : %10llu",   numMispred_btbATSF);
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_DYN  \t : %10llu",   numMispred_btbDYN);
-      printf("  MISPRED_PER_1K_INST         \t : %10.4f\n",   1000.0*(double)(numMispred)/(double)(total_instruction_counter));
+      printf("  MISPRED_PER_1K_INST         \t : %10.6f\n",   1000.0*(double)(numMispred)/(double)(total_instruction_counter));
       for (int i = 0; i < NB_PRE_PRED; i ++) {
-        printf("    MISPREPRED_PER_1K_INST %2d\t : %10.4f\n", i+1,  1000.0*(double)(misprepred[i])/(double)(total_instruction_counter));
+        printf("    MISPREPRED_PER_1K_INST %2d\t : %10.6f\n", i+1,  1000.0*(double)(misprepred[i])/(double)(total_instruction_counter));
       }
-      printf("  MISPRED_TRACE               \t : %10.4f\n",   trace_mispred_ponder);
+      printf("  MISPRED_TRACE               \t : %10.6f\n",   trace_mispred_ponder);
       
 
 //ver2      printf("  MISPRED_PER_1K_INST_BTB_MISS\t : %10.4f",   1000.0*(double)(numMispred_btbMISS)/(double)(total_instruction_counter));

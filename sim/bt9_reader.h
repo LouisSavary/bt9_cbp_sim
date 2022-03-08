@@ -322,7 +322,8 @@ namespace bt9 {
              */
             NodeTableIterator(const BT9Reader * rd, const uint32_t & idx) :
                 bt9_reader_(rd),
-                index_(idx)
+                index_(idx),
+                no_loop(true)
             {
                 assert(bt9_reader_ != nullptr);
             }
@@ -330,17 +331,19 @@ namespace bt9 {
             /// Copy constructor
             NodeTableIterator(const NodeTableIterator & rhs) :
                 bt9_reader_(rhs.bt9_reader_),
-                index_(rhs.index_)
+                index_(rhs.index_),
+                no_loop(rhs.no_loop),
+                stack_indir_br(rhs.stack_indir_br)
             {
                 assert(bt9_reader_ != nullptr);
             }
-
             /// move in the graph by taking a branch
                 // find a branch that starts from node
             uint32_t nextConditionalNode(bool taken=true) {
                 // index get the id of the new node
                 BT9ReaderNodeRecord node  = this->operator*();
-                bool conditional = node.brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
+                bool conditional  = node.brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
+                bool direct       = node.brClass().directness == BrClass::Directness::DIRECT;
                 bool at_least_one = false;
     
                 EdgeTableIterator edge_it = bt9_reader_->edgeTableBegin_();
@@ -349,15 +352,38 @@ namespace bt9 {
                         // printf("%u %u\n", edge_it->edgeIndex(), index_);
                         if (conditional) {
                             if (edge_it->isTakenPath() == taken) {
-                                this->index_ = edge_it->destNodeIndex();
+                                index_ = edge_it->destNodeIndex();
                                 return edge_it->edgeIndex();
                             } else {
                                 at_least_one = true;
                             }
                         } else {
-                            this->index_ = edge_it->destNodeIndex();
-                            return nextConditionalNode(taken);
-                            // return edge_it->edgeIndex();
+                            if (direct) {
+                                this->index_ = edge_it->destNodeIndex();
+                                return nextConditionalNode(taken);
+                                // return edge_it->edgeIndex();
+                            } else {
+                                uint32_t edgeIndex = edge_it->edgeIndex();
+                                if (std::find(stack_indir_br.begin(), stack_indir_br.end(), edgeIndex)!= stack_indir_br.end()) {
+                                    // already passed through this edge
+                                    no_loop = false;
+                                    return edgeIndex;
+                                } else {
+                                    // have not already pass through
+                                    stack_indir_br.push_back(edgeIndex);
+                                    uint32_t temp_ind = index_;
+                                    index_ = edge_it->destNodeIndex();
+                                    uint32_t nextCondBr = nextConditionalNode(taken);
+
+                                    if (no_loop) {
+                                        return nextCondBr;
+                                    } else {
+                                        index_ = temp_ind;
+                                        stack_indir_br.pop_back();
+                                        no_loop = true;
+                                    }
+                                }
+                            }
                         }
                     }
                     edge_it++;
@@ -499,6 +525,8 @@ namespace bt9 {
             }
 
         private:
+            std::vector<uint32_t> stack_indir_br;
+            bool no_loop;
             const BT9Reader * bt9_reader_ = nullptr;
             uint32_t index_ = 0;
         };
@@ -620,7 +648,7 @@ namespace bt9 {
                     return *(bt9_reader_->edge_order_vector_[index_]);
                 }
                 else {
-                    throw std::invalid_argument("Invalid Edge Index!\n");
+                    throw std::invalid_argument("Invalid Edge Index! operator*\n");
                 }
             }
             
@@ -635,7 +663,7 @@ namespace bt9 {
                     return bt9_reader_->edge_order_vector_[index_];
                 }
                 else {
-                    throw std::invalid_argument("Invalid Edge Index!\n");
+                    throw std::invalid_argument("Invalid Edge Index! operator->\n");
                 }
             }
             
@@ -671,6 +699,9 @@ namespace bt9 {
             
             EdgeTableIterator operator+=(uint32_t offset) {
                 index_ += offset;
+
+                // printf("edgeptr idx : %d, offset : %d\n", index_, offset);
+                // assert(bt9_reader_->isValidEdgeIndex_(index_) && "EdgeTableIterator::operator+=");
                 return *this;
             }
             
@@ -684,7 +715,7 @@ namespace bt9 {
                     return *(bt9_reader_->edge_order_vector_[idx]);
                 }
                 else {
-                    throw std::invalid_argument("Invalid Edge Index!\n");
+                    throw std::invalid_argument("Invalid Edge Index! operator[]\n");
                 }
             }
             
@@ -693,7 +724,7 @@ namespace bt9 {
                     return *(bt9_reader_->edge_order_vector_[idx]);
                 }
                 else {
-                    throw std::invalid_argument("Invalid Edge Index!\n");
+                    throw std::invalid_argument("Invalid Edge Index! operator[] const\n");
                 }
             }
 
@@ -1597,7 +1628,7 @@ namespace bt9 {
 
                     // Check if the number is a valid edge index
                     if (!isValidEdgeIndex_(edge_id)) {
-                        throw std::invalid_argument("Invalid Edge Index!\n");
+                        throw std::invalid_argument("Invalid Edge Index! readNextSequenceListENtry_\n");
                     }
                 }
                 catch (const std::invalid_argument & ex) {
