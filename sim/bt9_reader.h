@@ -374,12 +374,12 @@ namespace bt9 {
                                     uint32_t temp_ind = index_;
                                     index_ = edge_it->destNodeIndex();
                                     uint32_t nextCondBr = nextConditionalNode(taken);
+                                    stack_indir_br.pop_back();
 
                                     if (no_loop) {
                                         return nextCondBr;
                                     } else {
                                         index_ = temp_ind;
-                                        stack_indir_br.pop_back();
                                         no_loop = true;
                                     }
                                 }
