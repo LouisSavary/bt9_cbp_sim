@@ -364,25 +364,24 @@ namespace bt9 {
                                 // return edge_it->edgeIndex();
                             } else {
                                 uint32_t edgeIndex = edge_it->edgeIndex();
-                                if (std::find(stack_indir_br.begin(), stack_indir_br.end(), edgeIndex)!= stack_indir_br.end()) {
-                                    // already passed through this edge
-                                    no_loop = false;
-                                    return edgeIndex;
-                                } else {
+
+                                if (std::find(stack_indir_br.begin(), stack_indir_br.end(), edgeIndex) == stack_indir_br.end()) {
+                                //     // already passed through this edge
+                                //     // search another edge
+
+                                //     // no_loop = false;
+                                //     // return edgeIndex;
+                                // } else {
+
                                     // have not already pass through
                                     stack_indir_br.push_back(edgeIndex);
                                     uint32_t temp_ind = index_;
                                     index_ = edge_it->destNodeIndex();
                                     uint32_t nextCondBr = nextConditionalNode(taken);
                                     stack_indir_br.pop_back();
-
-                                    if (no_loop) {
-                                        return nextCondBr;
-                                    } else {
-                                        index_ = temp_ind;
-                                        no_loop = true;
-                                    }
-                                }
+                                    return nextCondBr;
+                                   
+                                } // else search another path
                             }
                         }
                     }

@@ -118,7 +118,18 @@ void CheckHeartBeat(UINT64 numIter, UINT64 numMispred)
     fflush(stdout);
     heartbeat = true;
   }
- 
+
+  if(heartbeat) {
+    time_t timer;
+    char buffer[27];
+    struct tm* tm_info;
+
+    timer = time(NULL);
+    tm_info = localtime(&timer);
+
+    strftime(buffer, 27, " %Y-%m-%d %H:%M:%S", tm_info);
+    puts(buffer);
+  }
   // if (heartbeat) {
   //   //print prepreds
   //   printf("\n");
