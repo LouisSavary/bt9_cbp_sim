@@ -2,7 +2,7 @@
 
 ```
 git clone https://github.com/LouisSavary/bt9_cbp_sim.git
-cd sim/
+cd bt9_cbp_sim/sim/
 make
 ```
 Il faut aussi télécharger les traces de simulation : https://jilp.org/cbp2016/framework.html
