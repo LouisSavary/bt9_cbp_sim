@@ -55,6 +55,8 @@ while (@ARGV) {
         $dest_dir = shift;
     }elsif ($option eq "-f") {
         $firewidth = shift;
+    }elsif ($option eq "-t") {
+        $trace_dir = shift;
     }else{
 	usage();
         die "Incorrect option ... Quitting\n";

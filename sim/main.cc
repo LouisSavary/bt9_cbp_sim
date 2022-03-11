@@ -121,14 +121,14 @@ void CheckHeartBeat(UINT64 numIter, UINT64 numMispred)
 
   if(heartbeat) {
     time_t timer;
-    char buffer[27];
+    char buffer[28];
     struct tm* tm_info;
 
     timer = time(NULL);
     tm_info = localtime(&timer);
 
-    strftime(buffer, 27, " %Y-%m-%d %H:%M:%S", tm_info);
-    puts(buffer);
+    strftime(buffer, 28, " %Y-%m-%d %H:%M:%S", tm_info);
+    puts(buffer); fflush(stdout);
   }
   // if (heartbeat) {
   //   //print prepreds
@@ -162,9 +162,11 @@ int main(int argc, char* argv[]){
   ///////////////////////////////////////////////
     
     PREDICTOR  *brpred = new PREDICTOR();  // this instantiates the predictor code
-    long int misprepred[NB_PRE_PRED] = {0};
+    long unsigned int misprepred[NB_PRE_PRED] = {0};
+    long unsigned int not_reached[NB_PRE_PRED] = {0};
     long prepreds[NB_PRE_PRED][NB_PRE_PRED+1] = {{0}};
-    float trace_mispred_ponder = 0.f;
+    long trace_length[NB_PRE_PRED][NB_PRE_PRED] = {{0}};
+    double trace_mispred_ponder = 0.0;
     uint32_t id_circ_ppred = 0;
 
     for (int i = 0; i < NB_PRE_PRED; i ++){
@@ -384,23 +386,24 @@ int main(int argc, char* argv[]){
             }
 
             //reset prepred[circ_ppred_id] + calc trace mispred
-            uint32_t num = 0, den = 0; 
+            uint32_t num = 0, den = 1; 
             if (prepreds[id_circ_ppred][NB_PRE_PRED] >= 0) { // there is a misprediction
               for (int i = 0; i < NB_PRE_PRED; i ++) {
                 if (prepreds[id_circ_ppred][i] >= (long)0) { // edge through a non-empty basic-block 
 
-                  bt9::BT9Reader::EdgeTableIterator edgeptr = bt9_reader.edge_table.begin();
-                  edgeptr += prepreds[id_circ_ppred][i];
-                  uint32_t edgesize = edgeptr->nonBrInstCnt() +1; 
-                  
+                  uint32_t edgesize = trace_length[id_circ_ppred][i]; 
+                  trace_length[id_circ_ppred][i] = 0;
+
                   den += edgesize;
                   if (i >= prepreds[id_circ_ppred][NB_PRE_PRED])
                     num += edgesize;
+                } else if (prepreds[id_circ_ppred][i] == -2) {
+                  break;
                 }
                 
                 prepreds[id_circ_ppred][i] = 0; //reset
               }
-              trace_mispred_ponder += ((float)num/(float)den);
+              trace_mispred_ponder += ((double)num/(double)den);
             }
             prepreds[id_circ_ppred][NB_PRE_PRED] = -1; //reset
 
@@ -419,6 +422,7 @@ int main(int argc, char* argv[]){
 
             bool prepred_dir = predDir;
             prepreds[id_circ_ppred][0] = (int)node_it.nextConditionalNode(prepred_dir);
+            trace_length[id_circ_ppred][0] = node_it.getPathInstrucCount();
             uint64_t pc_pred = node_it->brVirtualAddr();
 
  
@@ -427,8 +431,11 @@ int main(int argc, char* argv[]){
               prepreds[id_circ_ppred][i] = (int)node_it.nextConditionalNode(prepred_dir);
              
               if (prepreds[id_circ_ppred][i] == -2){//program's end or wrong path
-                while (++i < NB_PRE_PRED) 
+                not_reached[i] ++;
+                while (++i < NB_PRE_PRED) {
                   prepreds[id_circ_ppred][i] =  -2;
+                  not_reached[i] ++;
+                }
                 break; // stops prepredictions
               } 
 
@@ -512,9 +519,11 @@ int main(int argc, char* argv[]){
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_DYN  \t : %10llu",   numMispred_btbDYN);
       printf("  MISPRED_PER_1K_INST         \t : %10.6f\n",   1000.0*(double)(numMispred)/(double)(total_instruction_counter));
       for (int i = 0; i < NB_PRE_PRED; i ++) {
-        printf("    MISPREPRED_PER_1K_INST %2d\t : %10.6f\n", i+1,  1000.0*(double)(misprepred[i])/(double)(total_instruction_counter));
+        printf("    MISPREPRED_PER_1K_INST %2d\t : %10.6f\t %3.4f\n", i+1,  
+            1000.0*(double)(misprepred[i])/(double)(total_instruction_counter),  
+            100.0 - 100.0*(double)(not_reached[i])/(double)(cond_branch_instruction_counter));
       }
-      printf("  MISPRED_TRACE               \t : %10.6f\n",   trace_mispred_ponder);
+      printf("  MISPRED_TRACE               \t : %10.4f %\n",  100.0*(double)(trace_mispred_ponder)/(double)(cond_branch_instruction_counter));
       
 
 //ver2      printf("  MISPRED_PER_1K_INST_BTB_MISS\t : %10.4f",   1000.0*(double)(numMispred_btbMISS)/(double)(total_instruction_counter));

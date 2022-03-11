@@ -337,10 +337,15 @@ namespace bt9 {
             {
                 assert(bt9_reader_ != nullptr);
             }
+
+            uint32_t getPathInstrucCount() {
+                return path_instr_count;
+            }
             /// move in the graph by taking a branch
                 // find a branch that starts from node
-            uint32_t nextConditionalNode(bool taken=true) {
+            int nextConditionalNode(bool taken=true) {
                 // index get the id of the new node
+                path_instr_count = 0;
                 BT9ReaderNodeRecord node  = this->operator*();
                 bool conditional  = node.brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
                 bool direct       = node.brClass().directness == BrClass::Directness::DIRECT;
@@ -353,6 +358,7 @@ namespace bt9 {
                         if (conditional) {
                             if (edge_it->isTakenPath() == taken) {
                                 index_ = edge_it->destNodeIndex();
+                                path_instr_count = edge_it->nonBrInstCnt()+1;
                                 return edge_it->edgeIndex();
                             } else {
                                 at_least_one = true;
@@ -360,28 +366,32 @@ namespace bt9 {
                         } else {
                             if (direct) {
                                 this->index_ = edge_it->destNodeIndex();
-                                return nextConditionalNode(taken);
+                                uint32_t instr_cnt_tmp = edge_it->nonBrInstCnt();
+                                int nextCondBr = nextConditionalNode(taken);
+                                path_instr_count += instr_cnt_tmp;
+                                return nextCondBr;
                                 // return edge_it->edgeIndex();
-                            } else {
-                                uint32_t edgeIndex = edge_it->edgeIndex();
+                            } else { //if INDIRECT then give up
+                                return -2;
+                                // uint32_t edgeIndex = edge_it->edgeIndex();
 
-                                if (std::find(stack_indir_br.begin(), stack_indir_br.end(), edgeIndex) == stack_indir_br.end()) {
-                                //     // already passed through this edge
-                                //     // search another edge
+                                // if (std::find(stack_indir_br.begin(), stack_indir_br.end(), edgeIndex) == stack_indir_br.end()) {
+                                // //     // already passed through this edge
+                                // //     // search another edge
 
-                                //     // no_loop = false;
-                                //     // return edgeIndex;
-                                // } else {
+                                // //     // no_loop = false;
+                                // //     // return edgeIndex;
+                                // // } else {
 
-                                    // have not already pass through
-                                    stack_indir_br.push_back(edgeIndex);
-                                    uint32_t temp_ind = index_;
-                                    index_ = edge_it->destNodeIndex();
-                                    uint32_t nextCondBr = nextConditionalNode(taken);
-                                    stack_indir_br.pop_back();
-                                    return nextCondBr;
+                                //     // have not already pass through
+                                //     stack_indir_br.push_back(edgeIndex);
+                                //     uint32_t temp_ind = index_;
+                                //     index_ = edge_it->destNodeIndex();
+                                //     uint32_t nextCondBr = nextConditionalNode(taken);
+                                //     stack_indir_br.pop_back();
+                                //     return nextCondBr;
                                    
-                                } // else search another path
+                                // } // else search another path
                             }
                         }
                     }
@@ -395,6 +405,7 @@ namespace bt9 {
                     while (node_it != bt9_reader_->nodeTableEnd_()) {
                         if (node_it->brVirtualAddr() == nextaddr) {
                             this->index_ = node_it->brNodeIndex();
+                            path_instr_count = 1;
                             return -1;
                         }
                         node_it++;
@@ -526,6 +537,7 @@ namespace bt9 {
         private:
             std::vector<uint32_t> stack_indir_br;
             bool no_loop;
+            uint32_t path_instr_count = 0;
             const BT9Reader * bt9_reader_ = nullptr;
             uint32_t index_ = 0;
         };
