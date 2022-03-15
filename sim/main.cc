@@ -164,17 +164,12 @@ int main(int argc, char* argv[]){
     PREDICTOR  *brpred = new PREDICTOR();  // this instantiates the predictor code
     long unsigned int misprepred[NB_PRE_PRED] = {0};
     long unsigned int not_reached[NB_PRE_PRED] = {0};
-    long prepreds[NB_PRE_PRED][NB_PRE_PRED+1] = {{0}};
+    uint32_t prepred_trace_mis_id[NB_PRE_PRED] = {0};
+    long int prepreds[NB_PRE_PRED][NB_PRE_PRED] = {{0}};
     long trace_length[NB_PRE_PRED][NB_PRE_PRED] = {{0}};
-    long pc_br_pred[NB_PRE_PRED][NB_PRE_PRED] = {{0}};
     long unsigned int entirely_well_pred = 0;
     double trace_mispred_ponder = 0.0;
     uint32_t id_circ_ppred = 0;
-    unsigned int wrongsrcnode = 0;
-
-    for (int i = 0; i < NB_PRE_PRED; i ++){
-      prepreds[i][NB_PRE_PRED] = -1;
-    } 
 
   ///////////////////////////////////////////////
   // read each trace recrod, simulate until done
@@ -374,12 +369,12 @@ int main(int argc, char* argv[]){
               
               uint32_t id_j = (id_circ_ppred - i -1 + NB_PRE_PRED) %NB_PRE_PRED;
 
-              if (prepreds[i][NB_PRE_PRED] < (long)0) { // no mispred yet
+              if (prepred_trace_mis_id[i] == NB_PRE_PRED) { // no mispred yet
                 long int pred = prepreds[i][id_j];
                 
                 if (pred != it->getEdge()->edgeIndex()) {
                   misprepred[id_j] ++;
-                  prepreds[i][NB_PRE_PRED] = id_j;
+                  prepred_trace_mis_id[i] = id_j;
                 }
               
               } else {
@@ -389,34 +384,31 @@ int main(int argc, char* argv[]){
             
             
 
-            //reset prepred[circ_ppred_id] + calc trace mispred
             uint32_t num = 0, den = 0; 
-            if (prepreds[id_circ_ppred][NB_PRE_PRED] >= 0) { // there is a misprediction
+            if (prepred_trace_mis_id[id_circ_ppred] < NB_PRE_PRED) { // there is a misprediction
               for (int i = 0; i < NB_PRE_PRED; i ++) {
 
                 uint32_t edgesize = trace_length[id_circ_ppred][i]; 
 
                 den += edgesize;
-                if (i >= prepreds[id_circ_ppred][NB_PRE_PRED])
+                if (i >= prepred_trace_mis_id[id_circ_ppred])
                   num += edgesize;
 
                 
                 trace_length[id_circ_ppred][i] = 0;
-                pc_br_pred[id_circ_ppred][i] = 0;
-                prepreds[id_circ_ppred][i] = 0; //reset
+                prepreds[id_circ_ppred][i] = (long)0; //reset
               }
               if (den > 0)
                 trace_mispred_ponder += ((double)num/(double)den);
             } else entirely_well_pred ++;
 
-            prepreds[id_circ_ppred][NB_PRE_PRED] = -1; //reset
+            prepred_trace_mis_id[id_circ_ppred] = NB_PRE_PRED; //reset
 
             // PREDICTION //////////////////////////////////////////////////////////////////////
             bool predDir = false;
             
             
             predDir = brpred->GetPrediction(PC);
-            // brpred->UpdatePredictor(PC, branchTaken, predDir, branchTarget);
 
 
           //prepredictions
@@ -435,9 +427,8 @@ int main(int argc, char* argv[]){
 
             for (int i = 0; i < NB_PRE_PRED; i ++) {
               prepred_dir = snd_pred->GetPrediction(pc_pred);
-              prepreds[id_circ_ppred][i] = (int)node_it.nextConditionalNode(prepred_dir);
+              prepreds[id_circ_ppred][i] = (long)node_it.nextConditionalNode(prepred_dir);
               trace_length[id_circ_ppred][i] = node_it.getPathInstrucCount();
-              pc_br_pred[id_circ_ppred][i] = pc_pred;
               
               
               if (prepreds[id_circ_ppred][i] == -2){//program's end or wrong path
@@ -456,24 +447,11 @@ int main(int argc, char* argv[]){
 
             }
             delete snd_pred;
-
+            snd_pred = nullptr;
             // }
           //prepredictions end
 
             brpred->UpdatePredictor(PC, branchTaken, predDir, branchTarget);
-
-
-            // auto it_edge = bt9_reader.edge_table.begin();
-            // uint32_t a_path = 0;
-            // while (it_edge != bt9_reader.edge_table.end()) {
-            //   if (it_edge->srcNodeIndex() == it->getSrcNode()->brNodeIndex()
-            //     && it_edge->isTakenPath() == predDir)
-            //     a_path = it_edge->edgeIndex();
-            //   it_edge++;
-            // }
-
-            // if (a_path != prepreds[id_circ_ppred][0])
-            //   printf("different edges pred : %u \ttruth : %lu\n", a_path, prepreds[id_circ_ppred][0]);
 
             if(predDir != branchTaken){
               
@@ -552,7 +530,6 @@ int main(int argc, char* argv[]){
       }
       printf("  WELL_PRED_TRACE             \t : %10.4f %\n",  100.0-100.0*(double)(trace_mispred_ponder)/(double)(cond_branch_instruction_counter));
       printf("  ENTIRELY_WELL_PRED_TRACE    \t : %10lu\n",  entirely_well_pred);
-      // printf("  GRAPH TRACKING ERROR        \t : %10u\n",  wrongsrcnode);
       
 
 //ver2      printf("  MISPRED_PER_1K_INST_BTB_MISS\t : %10.4f",   1000.0*(double)(numMispred_btbMISS)/(double)(total_instruction_counter));
