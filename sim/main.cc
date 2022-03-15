@@ -166,8 +166,12 @@ int main(int argc, char* argv[]){
     long unsigned int not_reached[NB_PRE_PRED] = {0};
     long prepreds[NB_PRE_PRED][NB_PRE_PRED+1] = {{0}};
     long trace_length[NB_PRE_PRED][NB_PRE_PRED] = {{0}};
+    long pc_br_pred[NB_PRE_PRED][NB_PRE_PRED] = {{0}};
+    long unsigned int entirely_well_pred = 0;
     double trace_mispred_ponder = 0.0;
     uint32_t id_circ_ppred = 0;
+    uint32_t id_srcNode = 0;
+    unsigned int wrongsrcnode = 0;
 
     for (int i = 0; i < NB_PRE_PRED; i ++){
       prepreds[i][NB_PRE_PRED] = -1;
@@ -316,6 +320,7 @@ int main(int argc, char* argv[]){
           branchTaken = it->getEdge()->isTakenPath();
           branchTarget = it->getEdge()->brVirtualTarget();
 
+
           //printf("PC: %llx type: %x T %d N %d outcome: %d", PC, (UINT32)opType, it->getSrcNode()->brObservedTakenCnt(), it->getSrcNode()->brObservedNotTakenCnt(), branchTaken);
 
 /************************************************************************************************************/
@@ -359,52 +364,78 @@ int main(int argc, char* argv[]){
 //ver2            }
 //ver2            //puts("");
 
+          // if (cond_branch_instruction_counter > 0) {
+          //   if (id_srcNode != it->getSrcNode()->brNodeIndex()) {
+          //     wrongsrcnode++;
+          //   }
+          // }
 
             // STATS COLLECT ///////////////////////////////////////////////////////////////////
-  
             for (int i = 0; i < NB_PRE_PRED && i < cond_branch_instruction_counter; i++) {
-              // prepreds[i][NB_PRE_PRED+1] += it->getEdge()->nonBrInstCnt();
-              uint32_t id_j = (id_circ_ppred - i -1 + NB_PRE_PRED) %NB_PRE_PRED;
+              if (i == id_circ_ppred) continue;
 
-              if (prepreds[i][NB_PRE_PRED] < 0) {
-                int pred = prepreds[i][id_j];
-                
-                if (pred == -1) {
-                  for (int ii = id_j; ii < NB_PRE_PRED-1; ii ++) {
-                    prepreds[i][ii] = prepreds[i][ii+1]; //shift the edges forward
-                  }
-                  prepreds[i][NB_PRE_PRED-1] = -1;
-                  pred = prepreds[i][id_j];
-                }
+              uint32_t id_j = (id_circ_ppred - i + NB_PRE_PRED) %NB_PRE_PRED;
+
+              if (prepreds[i][NB_PRE_PRED] < (long)0) { // no mispred yet
+                long int pred = prepreds[i][id_j];
+                // if (pred != branchTaken) {
                 if (pred != it->getEdge()->edgeIndex()) {
                   misprepred[id_j] ++;
                   prepreds[i][NB_PRE_PRED] = id_j;
+                  if (id_j == 0) wrongsrcnode ++;
+                  // if (id_j == 0) printf("%llu %d %u\n", cond_branch_instruction_counter, i, id_circ_ppred);
+                  // if (pred != -2) {
+                  //   uint32_t srcPred = (bt9_reader.edge_table.begin() + pred)->srcNodeIndex();
+                  //   if ( srcPred != it->getSrcNode()->brNodeIndex()) {
+                  //     // graph tracking error
+                  //     // printf("erreur de parcours de graphe\n");
+                  //     if( i == 0) {
+
+                  //       // printf("not even close : %d \t pred %u src %u \t true %u src %u\n",i, pred, srcPred, it->getEdge()->edgeIndex(), it->getSrcNode()->brNodeIndex());
+                  //       // wrongsrcnode++;
+                  //     }
+                      
+                  //   } else {
+                  //     // printf("%dfalse\tpred \ttruth\nedgID\t%5u\t%5u\nsrcID\t%5u\t%5u\ndstID\t%5u\t%5u\npc_br\t%5lx\t%5lx\ntaken\t%5u\t%5u\n", i,
+                  //     //   pred, it->getEdge()->edgeIndex(),
+                  //     //   srcPred, it->getSrcNode()->brNodeIndex(),
+                  //     //   (bt9_reader.edge_table.begin() + pred)->destNodeIndex(), it->getDestNode()->brNodeIndex(),
+                  //     //   pc_br_pred[id_circ_ppred][i], it->getSrcNode()->brVirtualAddr(),
+                  //     //   (bt9_reader.edge_table.begin() + pred)->isTakenPath(), it->getEdge()->isTakenPath());
+                  //   }
+                  // } else {
+                  //   printf("pred %d : -2 \n",i);
+                  // }
+
                 }
+              
               } else {
                 misprepred[id_j] ++;
               }
             }
+            
+            
 
             //reset prepred[circ_ppred_id] + calc trace mispred
-            uint32_t num = 0, den = 1; 
+            uint32_t num = 0, den = 0; 
             if (prepreds[id_circ_ppred][NB_PRE_PRED] >= 0) { // there is a misprediction
               for (int i = 0; i < NB_PRE_PRED; i ++) {
-                if (prepreds[id_circ_ppred][i] >= (long)0) { // edge through a non-empty basic-block 
 
-                  uint32_t edgesize = trace_length[id_circ_ppred][i]; 
-                  trace_length[id_circ_ppred][i] = 0;
+                uint32_t edgesize = trace_length[id_circ_ppred][i]; 
 
-                  den += edgesize;
-                  if (i >= prepreds[id_circ_ppred][NB_PRE_PRED])
-                    num += edgesize;
-                } else if (prepreds[id_circ_ppred][i] == -2) {
-                  break;
-                }
+                den += edgesize;
+                if (i >= prepreds[id_circ_ppred][NB_PRE_PRED])
+                  num += edgesize;
+
                 
+                trace_length[id_circ_ppred][i] = 0;
+                pc_br_pred[id_circ_ppred][i] = 0;
                 prepreds[id_circ_ppred][i] = 0; //reset
               }
-              trace_mispred_ponder += ((double)num/(double)den);
-            }
+              if (den > 0)
+                trace_mispred_ponder += ((double)num/(double)den);
+            } else entirely_well_pred ++;
+
             prepreds[id_circ_ppred][NB_PRE_PRED] = -1; //reset
 
             // PREDICTION //////////////////////////////////////////////////////////////////////
@@ -412,45 +443,87 @@ int main(int argc, char* argv[]){
             
             
             predDir = brpred->GetPrediction(PC);
-            brpred->UpdatePredictor(PC, branchTaken, predDir, branchTarget);
-           
-              //prepredictions
+            // brpred->UpdatePredictor(PC, branchTaken, predDir, branchTarget);
+
+
+          //prepredictions
             // init 
-            snd_pred = new PREDICTOR(brpred);
             bt9::BT9Reader::NodeTableIterator node_it = bt9_reader.node_table.begin();
-            node_it+= it->getDestNode()->brNodeIndex();
+            node_it+= it->getSrcNode()->brNodeIndex();
+
 
             bool prepred_dir = predDir;
+            uint64_t branchtarget_bis = 0;//node_it.getBranchTarget();
+            uint64_t pc_pred;
+
             prepreds[id_circ_ppred][0] = (int)node_it.nextConditionalNode(prepred_dir);
+            pc_br_pred[id_circ_ppred][0] = PC;
             trace_length[id_circ_ppred][0] = node_it.getPathInstrucCount();
-            uint64_t pc_pred = node_it->brVirtualAddr();
+            pc_pred = node_it->brVirtualAddr();
+            id_srcNode = node_it->brNodeIndex();
 
- 
-            for (int i = 1; i < NB_PRE_PRED; i ++) {
-              prepred_dir = snd_pred->GetPrediction(pc_pred);
-              prepreds[id_circ_ppred][i] = (int)node_it.nextConditionalNode(prepred_dir);
-             
-              if (prepreds[id_circ_ppred][i] == -2){//program's end or wrong path
+            // prepredictions computation
+            if (prepreds[id_circ_ppred][0] == -2){//program's end or wrong path
+              not_reached[0] ++;
+              int i = 0;
+              // printf("fail! PC=0x%llx\n", PC);
+              while (++i < NB_PRE_PRED) {
+                prepreds[id_circ_ppred][i] =  -2;
                 not_reached[i] ++;
-                while (++i < NB_PRE_PRED) {
-                  prepreds[id_circ_ppred][i] =  -2;
+              }
+            } else {
+
+              snd_pred = new PREDICTOR(brpred);
+              snd_pred->UpdatePredictor(PC, predDir, predDir, branchtarget_bis); // assume correct prediction
+  
+              for (int i = 1; i < NB_PRE_PRED; i ++) {
+                prepred_dir = snd_pred->GetPrediction(pc_pred);
+                prepreds[id_circ_ppred][i] = (int)node_it.nextConditionalNode(prepred_dir);
+                trace_length[id_circ_ppred][i] = node_it.getPathInstrucCount();
+                pc_br_pred[id_circ_ppred][i] = pc_pred;
+                
+                
+                if (prepreds[id_circ_ppred][i] == -2){//program's end or wrong path
                   not_reached[i] ++;
+                  while (++i < NB_PRE_PRED) {
+                    prepreds[id_circ_ppred][i] =  -2;
+                    not_reached[i] ++;
+                  }
+                  break; // stops prepredictions
+                } 
+
+                if (i<NB_PRE_PRED-1) {
+                  // branchtarget_bis = node_it.getBranchTarget();
+                  snd_pred->UpdatePredictor(pc_pred, prepred_dir, prepred_dir, branchtarget_bis);
+                  pc_pred = node_it->brVirtualAddr();
                 }
-                break; // stops prepredictions
-              } 
+  
+              }
+              delete snd_pred;
 
-              // if (prepreds[id_circ_ppred][i] == -1)
-
-              uint64_t pc_pred_bis = node_it->brVirtualAddr();
-              snd_pred->UpdatePredictor(pc_pred, prepred_dir, prepred_dir, pc_pred_bis);
-              pc_pred = pc_pred_bis;
- 
             }
+            assert(prepreds[id_circ_ppred][NB_PRE_PRED] == -1);
+          //prepredictions end
 
-            delete snd_pred;
+            brpred->UpdatePredictor(PC, branchTaken, predDir, branchTarget);
+
+
+            // auto it_edge = bt9_reader.edge_table.begin();
+            // uint32_t a_path = 0;
+            // while (it_edge != bt9_reader.edge_table.end()) {
+            //   if (it_edge->srcNodeIndex() == it->getSrcNode()->brNodeIndex()
+            //     && it_edge->isTakenPath() == predDir)
+            //     a_path = it_edge->edgeIndex();
+            //   it_edge++;
+            // }
+
+            // if (a_path != prepreds[id_circ_ppred][0])
+            //   printf("different edges pred : %u \ttruth : %lu\n", a_path, prepreds[id_circ_ppred][0]);
 
             if(predDir != branchTaken){
+              
               prepreds[id_circ_ppred][NB_PRE_PRED] = 0;
+              misprepred[0] ++;
               numMispred++; // update mispred stats
 //ver2              if(btbATSF)
 //ver2                numMispred_btbATSF++; // update mispred stats
@@ -510,20 +583,23 @@ int main(int argc, char* argv[]){
 //ver2      printf("  NUM_CONDITIONAL_BR_BTB_ATSF \t : %10llu",   btb_atsf_cond_branch_instruction_counter);
 //ver2      printf("  NUM_CONDITIONAL_BR_BTB_DYN  \t : %10llu",   btb_dyn_cond_branch_instruction_counter);
       printf("  NUM_MISPREDICTIONS          \t : %10llu\n",   numMispred);
-      for (int i = 0; i < NB_PRE_PRED; i ++) {
-        printf("    NUM_MISPREPREDICTIONS %2d \t : %10ld\n", i+1,  misprepred[i]);
+      for (int i = 1; i < NB_PRE_PRED; i ++) {
+        printf("    NUM_MISPREPREDICTIONS %2d \t : %10lu\t%10lu\n", i+1,  misprepred[i], not_reached[i]);
       }
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_MISS \t : %10llu",   numMispred_btbMISS);
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_ANSF \t : %10llu",   numMispred_btbANSF);
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_ATSF \t : %10llu",   numMispred_btbATSF);
 //ver2      printf("  NUM_MISPREDICTIONS_BTB_DYN  \t : %10llu",   numMispred_btbDYN);
       printf("  MISPRED_PER_1K_INST         \t : %10.6f\n",   1000.0*(double)(numMispred)/(double)(total_instruction_counter));
-      for (int i = 0; i < NB_PRE_PRED; i ++) {
-        printf("    MISPREPRED_PER_1K_INST %2d\t : %10.6f\t %3.4f\n", i+1,  
+      for (int i = 1; i < NB_PRE_PRED; i ++) {
+        printf("    MISPREPRED_PER_1K_INST %2d\t : %10.6f\t %3.4f% \t %3.4f% \n", i+1,  
             1000.0*(double)(misprepred[i])/(double)(total_instruction_counter),  
-            100.0 - 100.0*(double)(not_reached[i])/(double)(cond_branch_instruction_counter));
+            100.0 - 100.0*(double)(not_reached[i])/(double)(cond_branch_instruction_counter),  
+            100.0*(double)(misprepred[i])/(double)(cond_branch_instruction_counter-not_reached[i]));
       }
-      printf("  MISPRED_TRACE               \t : %10.4f %\n",  100.0*(double)(trace_mispred_ponder)/(double)(cond_branch_instruction_counter));
+      printf("  WELL_PRED_TRACE             \t : %10.4f %\n",  100.0-100.0*(double)(trace_mispred_ponder)/(double)(cond_branch_instruction_counter));
+      printf("  ENTIRELY_WELL_PRED_TRACE    \t : %10lu\n",  entirely_well_pred);
+      // printf("  GRAPH TRACKING ERROR        \t : %10u\n",  wrongsrcnode);
       
 
 //ver2      printf("  MISPRED_PER_1K_INST_BTB_MISS\t : %10.4f",   1000.0*(double)(numMispred_btbMISS)/(double)(total_instruction_counter));

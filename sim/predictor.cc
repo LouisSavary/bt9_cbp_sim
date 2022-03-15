@@ -226,7 +226,8 @@ PREDICTOR::PREDICTOR(void)
 	// init alt meta-veriable
 	altBetterCount = ALTPRED_BET_INIT;
 	// reset random seed
-	srand(time(NULL));
+	rng_seed = time(NULL);
+	srand(rng_seed);
 	//log("exit init");
 	//log("tt test: ", tagTables[0][0].tag);
 }
@@ -388,8 +389,8 @@ PREDICTOR::PREDICTOR(const PREDICTOR* src) {
 	altBetterCount = src->altBetterCount;
 
 	// reset random seed
-	
-	srand(time(NULL));
+	rng_seed = src->rng_seed;
+	// srand(rng_seed);
 	//log("exit copy");
 	//log("tt test: ", tagTables[0][0].tag);
 }
@@ -812,7 +813,6 @@ void PREDICTOR::fold(csr_t *shift)
 
 void PREDICTOR::TrackOtherInst(UINT64 PC, OpType opType, UINT64 branchTarget)
 {
-
 	// This function is called for instructions which are not
 	// conditional branches, just in case someone decides to design
 	// a predictor that uses information from such instructions.

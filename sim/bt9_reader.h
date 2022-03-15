@@ -322,8 +322,7 @@ namespace bt9 {
              */
             NodeTableIterator(const BT9Reader * rd, const uint32_t & idx) :
                 bt9_reader_(rd),
-                index_(idx),
-                no_loop(true)
+                index_(idx)
             {
                 assert(bt9_reader_ != nullptr);
             }
@@ -331,9 +330,7 @@ namespace bt9 {
             /// Copy constructor
             NodeTableIterator(const NodeTableIterator & rhs) :
                 bt9_reader_(rhs.bt9_reader_),
-                index_(rhs.index_),
-                no_loop(rhs.no_loop),
-                stack_indir_br(rhs.stack_indir_br)
+                index_(rhs.index_)
             {
                 assert(bt9_reader_ != nullptr);
             }
@@ -341,79 +338,73 @@ namespace bt9 {
             uint32_t getPathInstrucCount() {
                 return path_instr_count;
             }
+            uint32_t getBranchTarget() {
+                return branch_target;
+            }
+
+
             /// move in the graph by taking a branch
-                // find a branch that starts from node
+            /// return the first taken conditional branch
+            /// set index_ before the next conditional branch
             int nextConditionalNode(bool taken=true) {
                 // index get the id of the new node
-                path_instr_count = 0;
                 BT9ReaderNodeRecord node  = this->operator*();
                 bool conditional  = node.brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
                 bool direct       = node.brClass().directness == BrClass::Directness::DIRECT;
-                bool at_least_one = false;
-    
+                int cond_path     = -2;
+                path_instr_count = 0;
+                branch_target = 0;
+
+                
+                //start on a conditional branch, otherwise it is either indirect or ended
+                if (!conditional) return -2; 
+                
+                //else  find a conditional branch that starts from node
                 EdgeTableIterator edge_it = bt9_reader_->edgeTableBegin_();
                 while (edge_it != bt9_reader_->edgeTableEnd_()) {
-                    if (edge_it->srcNodeIndex() == index_) {
-                        // printf("%u %u\n", edge_it->edgeIndex(), index_);
-                        if (conditional) {
-                            if (edge_it->isTakenPath() == taken) {
-                                index_ = edge_it->destNodeIndex();
-                                path_instr_count = edge_it->nonBrInstCnt()+1;
-                                return edge_it->edgeIndex();
-                            } else {
-                                at_least_one = true;
-                            }
-                        } else {
-                            if (direct) {
-                                this->index_ = edge_it->destNodeIndex();
-                                uint32_t instr_cnt_tmp = edge_it->nonBrInstCnt();
-                                int nextCondBr = nextConditionalNode(taken);
-                                path_instr_count += instr_cnt_tmp;
-                                return nextCondBr;
-                                // return edge_it->edgeIndex();
-                            } else { //if INDIRECT then give up
-                                return -2;
-                                // uint32_t edgeIndex = edge_it->edgeIndex();
-
-                                // if (std::find(stack_indir_br.begin(), stack_indir_br.end(), edgeIndex) == stack_indir_br.end()) {
-                                // //     // already passed through this edge
-                                // //     // search another edge
-
-                                // //     // no_loop = false;
-                                // //     // return edgeIndex;
-                                // // } else {
-
-                                //     // have not already pass through
-                                //     stack_indir_br.push_back(edgeIndex);
-                                //     uint32_t temp_ind = index_;
-                                //     index_ = edge_it->destNodeIndex();
-                                //     uint32_t nextCondBr = nextConditionalNode(taken);
-                                //     stack_indir_br.pop_back();
-                                //     return nextCondBr;
-                                   
-                                // } // else search another path
-                            }
-                        }
+                    if (edge_it->srcNodeIndex() == index_){
+                        if (edge_it->isTakenPath() == taken) {
+                            cond_path = edge_it->edgeIndex();
+                            index_ = edge_it->destNodeIndex();
+                            path_instr_count = (edge_it->nonBrInstCnt())+1;
+                            branch_target = edge_it->brVirtualTarget();
+                            break;
+                        } 
                     }
-                    edge_it++;
+                    ++edge_it;
                 }
-                if (at_least_one) {
-                    //not taken -> find the next br (next instr, else it would have an edge)
-                    uint64_t nextaddr = node.brVirtualAddr() + node.brOpcodeSize();
-                    BT9Reader::NodeTableIterator node_it = bt9_reader_->nodeTableBegin_();
 
-                    while (node_it != bt9_reader_->nodeTableEnd_()) {
-                        if (node_it->brVirtualAddr() == nextaddr) {
-                            this->index_ = node_it->brNodeIndex();
-                            path_instr_count = 1;
-                            return -1;
-                        }
-                        node_it++;
-                    }
+                if (cond_path == -2) {
+                    // no branch found -> broken path
+                    return -2;
                 }
-                // printf("\t1");
-                // happen on program's end
-                return -2;
+                // int count_edge = 1;
+                // path to the next conditional br
+                conditional = this->operator->()->brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
+                direct      = this->operator->()->brClass().directness     == BrClass::Directness::DIRECT;
+                bool found  =  false;
+                while (!conditional && direct) {
+                    //serach for edge to take
+                    edge_it = bt9_reader_->edgeTableBegin_();
+                    while (edge_it != bt9_reader_->edgeTableEnd_()) {
+                        if (edge_it->srcNodeIndex() == index_) {
+                            // direct and unconditional by outter while condition
+                            index_ = edge_it->destNodeIndex();
+                            path_instr_count += edge_it->nonBrInstCnt()+1;
+                            found = true;
+                            // count_edge ++;
+                            break;
+                        }
+                        ++edge_it;
+                    }
+
+                    if (!found) break; //end of the program 
+
+                    conditional = this->operator->()->brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
+                    direct      = this->operator->()->brClass().directness     == BrClass::Directness::DIRECT;
+                }
+                // printf("%d\n", count_edge);
+                return cond_path;
             }
 
             /// Copy assignment operator
@@ -535,9 +526,8 @@ namespace bt9 {
             }
 
         private:
-            std::vector<uint32_t> stack_indir_br;
-            bool no_loop;
             uint32_t path_instr_count = 0;
+            uint64_t branch_target = 0;
             const BT9Reader * bt9_reader_ = nullptr;
             uint32_t index_ = 0;
         };
@@ -623,6 +613,7 @@ namespace bt9 {
                 index_ = rhs.index_;
 
                 assert(bt9_reader_ != nullptr);
+                return *this;
             }
             
             /// Pre-increment operator
@@ -674,7 +665,7 @@ namespace bt9 {
                     return bt9_reader_->edge_order_vector_[index_];
                 }
                 else {
-                    throw std::invalid_argument("Invalid Edge Index! operator->\n");
+                    throw std::invalid_argument("Invalid Edge Index! operator->\n"); 
                 }
             }
             

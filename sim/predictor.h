@@ -85,6 +85,7 @@ private:
 	UINT32 clock;					// global clock
 	bool clockState;			// clocl flip it
 	INT32 altBetterCount; // number of times altpred is better than prd
+	time_t rng_seed;
 public:
 	// The interface to the four functions below CAN NOT be changed
 

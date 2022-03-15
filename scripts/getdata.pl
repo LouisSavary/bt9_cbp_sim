@@ -101,7 +101,7 @@ print_amean()     if($amean);
 sub init_stats{
   for($ii=0; $ii< $max_dirs; $ii++){
     for($jj=0; $jj< $num_w; $jj++){
-      for($kk=0; $kk<= $prepred+1; $kk++){
+      for($kk=0; $kk<= 2*$prepred+1; $kk++){
         $data[$ii][$jj][$kk]=0;
 
       }
