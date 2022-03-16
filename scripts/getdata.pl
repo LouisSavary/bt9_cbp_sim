@@ -8,7 +8,7 @@ require ( "./bench_list.pl");
 
 $stat      = "MISPRED_PER_1K_INST";
 $statscnd  = "MISPREPRED_PER_1K_INST";
-$statthrd  = "MISPRED_TRACE";
+$statthrd  = "WELL_PRED_TRACE";
 $wsuite    = "all";
 $max_dirs  = 1024;
 $amean     = 1;  # always print amean
