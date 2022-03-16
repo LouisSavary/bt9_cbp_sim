@@ -5,6 +5,7 @@
 #include "utils.h"
 // #include "tracer.h"
 #include <bitset>
+#include <vector>
 
 #define NUM_TAGE_TABLES 12
 
@@ -23,7 +24,7 @@ typedef struct csr
 typedef struct bimodVal
 {
 	UINT32 pred; // prediction (2 bits)
-	// bool m; //metapredictor (1 bit) (eliminated)
+							 // bool m; //metapredictor (1 bit) (eliminated)
 } bimodVal_t;
 
 typedef struct tagVal
@@ -60,38 +61,39 @@ class PREDICTOR
 	// The state is defined for Gshare, change for your design
 
 private:
-	bitset<1001> *GHR; // global history register
-	UINT32 PHR;				 // path history
+	bitset<1001> GHR; // global history register
+	UINT32 PHR;				// path history
 
 	// tables
-	bimodVal_t *bimodal;			// bimodal table
-	UINT32 numBimodalEntries; // number of entries in bimodal table
-	tagVal_t **tagTables;			// TAGE table
+	vector<bimodVal_t> bimodal; // bimodal table
+	// UINT32 numBimodalEntries; // number of entries in bimodal table
+	vector<vector<tagVal_t>> tagTables; // TAGE table
 	// UINT32 tageTableSize;	              //number of entries in TAGE table
-	loopVal_t *loopTable; // loop table
-	UINT32 loopTableSize; // number of loop table entries
+	vector<loopVal_t> loopTable; // loop table
+	// UINT32 loopTableSize; // number of loop table entries
 
-	UINT32 *tageTableSize;
-	UINT32 *tageTagSize;
+	vector<UINT32> tageTableSize;
+	vector<UINT32> tageTagSize;
 
-	UINT32 *tageHistory; // number ofGHR bits examined by CSR to index a given table
-	csr_t *csrIndex;		 // circular shift register for indices
-	csr_t **csrTag;			 // 2 circular shift registers for tags
+	vector<UINT32> tageHistory;		// number ofGHR bits examined by CSR to index a given table
+	vector<csr_t> csrIndex;				// circular shift register for indices
+	vector<vector<csr_t>> csrTag; // 2 circular shift registers for tags
 
 	prediction_t pred; // global prediction
 
-	UINT32 *tageIndex;		// index calculated for a given table
-	UINT32 *tageTag;			// tag calculated for a given table
-	UINT32 clock;					// global clock
-	bool clockState;			// clocl flip it
-	INT32 altBetterCount; // number of times altpred is better than prd
+	vector<UINT32> tageIndex; // index calculated for a given table
+	vector<UINT32> tageTag;		// tag calculated for a given table
+	UINT32 clock;							// global clock
+	bool clockState;					// clocl flip it
+	INT32 altBetterCount;			// number of times altpred is better than prd
 	time_t rng_seed;
+
 public:
 	// The interface to the four functions below CAN NOT be changed
 
 	PREDICTOR(void);
-	PREDICTOR(const PREDICTOR* src);
-	~PREDICTOR();
+	PREDICTOR(const PREDICTOR &src) = default;
+	~PREDICTOR() = default;
 	bool GetPrediction(UINT64 PC);
 
 	void UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64 branchTarget);

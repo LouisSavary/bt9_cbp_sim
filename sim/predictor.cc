@@ -87,18 +87,30 @@
 // 	}
 // }
 
-PREDICTOR::PREDICTOR(void)
+PREDICTOR::PREDICTOR(void) : GHR(), tageTableSize(NUM_TAGE_TABLES),
+														 tageTagSize(NUM_TAGE_TABLES),
+														 tagTables(NUM_TAGE_TABLES), bimodal(1 << BIMODAL_SIZE),
+
+														 loopTable(1 << LOOP_TABLE_SIZE), tageHistory(NUM_TAGE_TABLES),
+
+														 csrIndex(NUM_TAGE_TABLES),
+
+														 csrTag(2),
+														 tageIndex(NUM_TAGE_TABLES),
+														 tageTag(NUM_TAGE_TABLES)
+
 {
 	// init logs for debugging. Only works if LOG isn't 0
+	csrTag[0].resize(NUM_TAGE_TABLES);
+	csrTag[1].resize(NUM_TAGE_TABLES);
 	// initLog();
 	// log("Starting execution");
 
 	// find size of each TAGE table
 	// log("attempting to make new var");
 
-	GHR = new bitset<1001>;
+	// GHR = bitset<1001>();
 
-	tageTableSize = new UINT32[NUM_TAGE_TABLES];
 	tageTableSize[0] = 9;		// 10Kb
 	tageTableSize[1] = 9;		// 9.5Kb
 	tageTableSize[2] = 10;	// 18Kb
@@ -112,7 +124,7 @@ PREDICTOR::PREDICTOR(void)
 	tageTableSize[10] = 10; // 12Kb
 	tageTableSize[11] = 10; // 12Kb
 													//= 221.5K bits
-	tageTagSize = new UINT32[NUM_TAGE_TABLES];
+
 	tageTagSize[0] = 15;
 	tageTagSize[1] = 14;
 	tageTagSize[2] = 13;
@@ -127,14 +139,13 @@ PREDICTOR::PREDICTOR(void)
 	tageTagSize[11] = 7;
 
 	// log("to tag init");
-	tagTables = new tagVal_t *[NUM_TAGE_TABLES];
 	// initialize TAGE tag tables
 
 	for (UINT32 i = 0; i < NUM_TAGE_TABLES; i++)
 	{
 		// log("initialized ", i);
 		UINT32 tableSize = (1 << tageTableSize[i]);
-		tagTables[i] = new tagVal_t[tableSize];
+		tagTables[i].resize(tableSize);
 		for (UINT32 j = 0; j < tableSize; j++)
 		{
 			tagTables[i][j].pred = 0; // 3 bits
@@ -145,19 +156,15 @@ PREDICTOR::PREDICTOR(void)
 	}
 	// log("done tag");
 	// find number of bimodal table entries
-	numBimodalEntries = (1 << BIMODAL_SIZE); // 2^13 entries of 2 bits each = 2^14 bits = 16k bits
 	// create bimodal table
-	bimodal = new bimodVal_t[numBimodalEntries];
 
 	// initialize bimodal predictions for each table
-	for (UINT32 i = 0; i < numBimodalEntries; i++)
+	for (UINT32 i = 0; i < bimodal.size(); i++)
 	{
 		bimodal[i].pred = BIMODAL_PRED_INIT;
 	}
 
-	loopTableSize = (1 << LOOP_TABLE_SIZE);
-	loopTable = new loopVal_t[loopTableSize];
-	for (UINT32 i = 0; i < loopTableSize; i++)
+	for (UINT32 i = 0; i < loopTable.size(); i++)
 	{
 		loopTable[i].loopCount = 0;		// 2 bits
 		loopTable[i].currentIter = 0; // 14 bits
@@ -166,11 +173,10 @@ PREDICTOR::PREDICTOR(void)
 		loopTable[i].age = 0;					// 8 bits
 		loopTable[i].pred = false;		// 1 bit
 		loopTable[i].used = false;		// 1 bit
-															 // 42 bits * 2^9 entries = 21Kb
+																	// 42 bits * 2^9 entries = 21Kb
 	}
-	//log("to hist init");
-	// initialize geometric history lengths for TAGE tables
-	tageHistory = new UINT32[NUM_TAGE_TABLES];
+	// log("to hist init");
+	//  initialize geometric history lengths for TAGE tables
 	tageHistory[0] = HIST_1;
 	tageHistory[1] = HIST_2;
 	tageHistory[2] = HIST_3;
@@ -184,12 +190,8 @@ PREDICTOR::PREDICTOR(void)
 	tageHistory[10] = HIST_11;
 	tageHistory[11] = HIST_12;
 
-	//log("done hist init");
-	// create circular shift registers
-	csrIndex = new csr_t[NUM_TAGE_TABLES];
-	csrTag = new csr_t *[2];
-	csrTag[0] = new csr_t[NUM_TAGE_TABLES];
-	csrTag[1] = new csr_t[NUM_TAGE_TABLES];
+	// log("done hist init");
+	//  create circular shift registers
 	// initialize circular shift registers
 	for (UINT32 i = 0; i < NUM_TAGE_TABLES; i++)
 	{
@@ -205,13 +207,11 @@ PREDICTOR::PREDICTOR(void)
 	pred.altTable = NUM_TAGE_TABLES;
 
 	// initialize indices
-	tageIndex = new UINT32[NUM_TAGE_TABLES];
 	for (UINT32 i = 0; i < NUM_TAGE_TABLES; i++)
 	{
 		tageIndex[i] = 0;
 	}
 	// initialize tags
-	tageTag = new UINT32[NUM_TAGE_TABLES];
 	for (UINT32 i = 0; i < NUM_TAGE_TABLES; i++)
 	{
 		tageTag[i] = 0;
@@ -222,216 +222,30 @@ PREDICTOR::PREDICTOR(void)
 	// init path history
 	PHR = 0;
 	// init global history
-	GHR->reset();
+	GHR.reset();
 	// init alt meta-veriable
 	altBetterCount = ALTPRED_BET_INIT;
 	// reset random seed
 	rng_seed = time(NULL);
 	srand(rng_seed);
-	//log("exit init");
-	//log("tt test: ", tagTables[0][0].tag);
+	// log("exit init");
+	// log("tt test: ", tagTables[0][0].tag);
 }
 
 
-PREDICTOR::PREDICTOR(const PREDICTOR* src) {
-	// init logs for debugging. Only works if LOG isn't 0
-	//initLog();
-	//log("Starting execution");
-
-	// find size of each TAGE table
-	//log("attempting to make new var");
-
-	GHR = new bitset<1001>;
-
-	tageTableSize = src->tageTableSize;
-	// tageTableSize[0] = 9;		// 10Kb
-	// tageTableSize[1] = 9;		// 9.5Kb
-	// tageTableSize[2] = 10;	// 18Kb
-	// tageTableSize[3] = 10;	// 17Kb
-	// tageTableSize[4] = 10;	// 17Kb
-	// tageTableSize[5] = 10;	// 16Kb
-	// tageTableSize[6] = 11;	// 30Kb
-	// tageTableSize[7] = 11;	// 28Kb
-	// tageTableSize[8] = 11;	// 26Kb
-	// tageTableSize[9] = 11;	// 26Kb
-	// tageTableSize[10] = 10; // 12Kb
-	// tageTableSize[11] = 10; // 12Kb
-	// 												//= 221.5K bits
-	tageTagSize = src->tageTagSize;
-	// tageTagSize[0] = 15;
-	// tageTagSize[1] = 14;
-	// tageTagSize[2] = 13;
-	// tageTagSize[3] = 12;
-	// tageTagSize[4] = 12;
-	// tageTagSize[5] = 11;
-	// tageTagSize[6] = 10;
-	// tageTagSize[7] = 9;
-	// tageTagSize[8] = 8;
-	// tageTagSize[9] = 8;
-	// tageTagSize[10] = 8;
-	// tageTagSize[11] = 7;
-
-	//log("to tag copy");
-	tagTables = new tagVal_t *[NUM_TAGE_TABLES];
-	// initialize TAGE tag tables
-	for (UINT32 i = 0; i < NUM_TAGE_TABLES; i++)
-	{
-		//log("copying ", i);
-		UINT32 tableSize = (1 << tageTableSize[i]);
-		tagTables[i] = new tagVal_t[tableSize];
-		memcpy(tagTables[i], src->tagTables[i], tableSize * sizeof(tagVal_t));
-				// for (UINT32 j = 0; j < tableSize; j++)
-				// {
-				// 	tagTables[i][j].pred = 0; // 3 bits
-				// 	tagTables[i][j].tag = 0;	// 11 bits
-				// 	tagTables[i][j].u = 0;		// 2 bit
-				// }
-		// log("tageTableSize: ", tageTableSize);
-	}
-	//log("done tag copy");
-	// find number of bimodal table entries
-	numBimodalEntries = (1 << BIMODAL_SIZE); // 2^13 entries of 2 bits each = 2^14 bits = 16k bits
-	// create bimodal table
-	bimodal = new bimodVal_t[numBimodalEntries];
-
-	// initialize bimodal predictions for each table
-	for (UINT32 i = 0; i < numBimodalEntries; i++)
-	{
-		// bimodal[i].pred = BIMODAL_PRED_INIT;
-		bimodal[i].pred = src->bimodal[i].pred;
-	}
-
-	loopTableSize = (1 << LOOP_TABLE_SIZE);
-
-	loopTable = new loopVal_t[loopTableSize];
-	memcpy(loopTable, src->loopTable, loopTableSize*sizeof(loopVal_t));
-	// for (UINT32 i = 0; i < loopTableSize; i++)
-	// {
-	// 	loopTable[i].loopCount = 0;		// 2 bits
-	// 	loopTable[i].currentIter = 0; // 14 bits
-	// 	loopTable[i].tag = 0;					// 14 bits
-	// 	loopTable[i].conf = 0;				// 2 bits
-	// 	loopTable[i].age = 0;					// 8 bits
-	// 	loopTable[i].pred = false;		// 1 bit
-	// 	loopTable[i].used = false;		// 1 bit
-	// 														 // 42 bits * 2^9 entries = 21Kb
-	// }
-	//log("to hist copy");
-	// initialize geometric history lengths for TAGE tables
-	tageHistory = src->tageHistory; // UINT32[NUM_TAGE_TABLES];
-	// memcpy(tageHistory, src->tageHistory, NUM_TAGE_TABLES * sizeof(UINT32));
-			// tageHistory[0] = HIST_1;
-			// tageHistory[1] = HIST_2;
-			// tageHistory[2] = HIST_3;
-			// tageHistory[3] = HIST_4;
-			// tageHistory[4] = HIST_5;
-			// tageHistory[5] = HIST_6;
-			// tageHistory[6] = HIST_7;
-			// tageHistory[7] = HIST_8;
-			// tageHistory[8] = HIST_9;
-			// tageHistory[9] = HIST_10;
-			// tageHistory[10] = HIST_11;
-			// tageHistory[11] = HIST_12;
-
-	//log("done hist copy");
-	// create circular shift registers
-	csrIndex = new csr_t[NUM_TAGE_TABLES];
-	csrTag = new csr_t *[2];
-	csrTag[0] = new csr_t[NUM_TAGE_TABLES];
-	csrTag[1] = new csr_t[NUM_TAGE_TABLES];
-	// initialize circular shift registers
-	memcpy(csrIndex, 	src->csrIndex, 	NUM_TAGE_TABLES * sizeof(csr_t));
-	memcpy(csrTag[0], src->csrTag[0], NUM_TAGE_TABLES * sizeof(csr_t));
-	memcpy(csrTag[1], src->csrTag[1], NUM_TAGE_TABLES * sizeof(csr_t));
-			// for (UINT32 i = 0; i < NUM_TAGE_TABLES; i++)
-			// {
-			// 	initFold(&csrIndex[i], tageHistory[i], tageTagSize[i]);
-			// 	initFold(&csrTag[0][i], tageHistory[i], tageTagSize[i]);
-			// 	initFold(&csrTag[1][i], tageHistory[i], tageTagSize[i] - 1);
-			// }
-
-	// initialize global prediction
-	// do not need to be copied from src
-	pred.pred = src->pred.pred;
-	pred.altPred = src->pred.altPred;
-	pred.table = src->pred.table;
-	pred.altTable = src->pred.altTable;
-
-	// initialize indices
-	tageIndex = new UINT32[NUM_TAGE_TABLES];
-	memcpy(tageIndex, src->tageIndex, NUM_TAGE_TABLES * sizeof(UINT32));
-			// for (UINT32 i = 0; i < NUM_TAGE_TABLES; i++)
-			// {
-			// 	tageIndex[i] = 0;
-			// }
-	// initialize tags
-	tageTag = new UINT32[NUM_TAGE_TABLES];
-	memcpy(tageTag, src->tageTag, NUM_TAGE_TABLES * sizeof(UINT32));
-			// for (UINT32 i = 0; i < NUM_TAGE_TABLES; i++)
-			// {
-			// 	tageTag[i] = 0;
-			// }
-
-	// init clock
-	clock = src->clock;
-	clockState = src->clockState;
-
-	// init path history
-	PHR = src->PHR;
-
-	// init global history
-			// GHR->reset();
-	*GHR = *src->GHR;
-	// for (int i = 0; i < GHR->size(); i ++)
-	// 	GHR->set(i,src->GHR->test(i));
-
-	// init alt meta-veriable
-	altBetterCount = src->altBetterCount;
-
-	// reset random seed
-	rng_seed = src->rng_seed;
-	// srand(rng_seed);
-	//log("exit copy");
-	//log("tt test: ", tagTables[0][0].tag);
-}
-
-
-
-PREDICTOR::~PREDICTOR() {
-	// delete all pointers
-	delete GHR;
-	delete bimodal;
-	
-	for (UINT32 i = 0; i < NUM_TAGE_TABLES; i++)
-	{
-		delete tagTables[i];
-	}
-	delete tagTables;
-
-	delete loopTable;
-	// delete tageHistory;
-
-	delete csrIndex;
-	delete csrTag[0];
-	delete csrTag[1];
-	delete csrTag;
-
-	delete tageIndex;
-	delete tageTag;
-}
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 
 bool PREDICTOR::GetPrediction(UINT64 PC)
 {
-	//log("in pred");
-	// get bimodal index
-	UINT32 bimodalIndex = (PC) % (numBimodalEntries);
+	// log("in pred");
+	//  get bimodal index
+	UINT32 bimodalIndex = (PC) % (bimodal.size());
 	// get loop predictor index
-	UINT32 loopIndex = (PC) % (loopTableSize);
+	UINT32 loopIndex = (PC) % (loopTable.size());
 
-	//log("Check loop");
-	// check loop counter
+	// log("Check loop");
+	//  check loop counter
 	UINT32 loopTag = (PC) % (1 << LOOP_TAG_SIZE);
 	if (loopTable[loopIndex].tag == loopTag &&
 			loopTable[loopIndex].currentIter < loopTable[loopIndex].loopCount)
@@ -453,32 +267,32 @@ bool PREDICTOR::GetPrediction(UINT64 PC)
 	loopTable[loopIndex].used = false;
 
 	// else use TAGE
-	//log("get tag");
+	// log("get tag");
 	// initialize tags
 	for (int i = 0; i < NUM_TAGE_TABLES; i++)
 	{
 		tageTag[i] = getTag(PC, i, tageTagSize[i]);
 	}
 	// initialize index
-	//log("get index");
+	// log("get index");
 	UINT32 offset[13] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 	for (int i = 0; i < NUM_TAGE_TABLES; i++)
 	{
 		tageIndex[i] = getIndex(PC, i, tageTableSize[i], offset[i]);
 	}
-	//log("initialize pred");
-	// initialize prediction
+	// log("initialize pred");
+	//  initialize prediction
 	pred.pred = -1;
 	pred.altPred = -1;
 	pred.table = NUM_TAGE_TABLES;
 	pred.altTable = NUM_TAGE_TABLES;
 
-	//log("check tags");
+	// log("check tags");
 	for (UINT32 i = 0; i < NUM_TAGE_TABLES; i++)
 	{ // check for tag hits
-		//log("accessing index: ", tageIndex[i]);
-		//log("tag: ", tageTag[i]);
-		//log("value: ", tagTables[0][0].tag);
+		// log("accessing index: ", tageIndex[i]);
+		// log("tag: ", tageTag[i]);
+		// log("value: ", tagTables[0][0].tag);
 		if (tagTables[i][tageIndex[i]].tag == tageTag[i])
 		{ // tag hit
 			pred.table = i;
@@ -486,7 +300,7 @@ bool PREDICTOR::GetPrediction(UINT64 PC)
 			break;
 		}
 	}
-	//log("check tags for altpred");
+	// log("check tags for altpred");
 	for (UINT32 i = pred.table + 1; i < NUM_TAGE_TABLES; i++)
 	{ // check for tag hits on lower tables
 		if (tagTables[i][tageIndex[i]].tag == tageTag[i])
@@ -496,7 +310,7 @@ bool PREDICTOR::GetPrediction(UINT64 PC)
 			break;
 		}
 	}
-	//log("make pred");
+	// log("make pred");
 	if (pred.table < NUM_TAGE_TABLES)
 	{ // if we haven't missed a table
 		if (pred.altTable == NUM_TAGE_TABLES)
@@ -528,7 +342,7 @@ bool PREDICTOR::GetPrediction(UINT64 PC)
 		pred.altPred = (bimodal[bimodalIndex].pred > BIMODAL_PRED_MAX / 2); // use bimodal table prediction
 		return pred.altPred;																								// return alt-pred
 	}
-	//log("out pred");
+	// log("out pred");
 }
 
 /////////////////////////////////////////////////////////////
@@ -536,11 +350,11 @@ bool PREDICTOR::GetPrediction(UINT64 PC)
 
 void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64 branchTarget)
 {
-	//log("in update");
+	// log("in update");
 	bool newInTable;
-	UINT32 bimodalIndex = (PC) % (numBimodalEntries); // get bimodal index
+	UINT32 bimodalIndex = (PC) % (bimodal.size()); // get bimodal index
 
-	UINT32 loopIndex = (PC) % (loopTableSize);
+	UINT32 loopIndex = (PC) % (loopTable.size());
 	UINT32 loopTag = (PC) & (1 << LOOP_TAG_SIZE);
 	// update loop perdictor
 	if (loopTable[loopIndex].tag != loopTag && loopTable[loopIndex].age > 0)
@@ -598,13 +412,13 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 			return;
 		}
 	}
-	//log("after loop:");
-	// update prediction counters in tag/bimodal tables
+	// log("after loop:");
+	//  update prediction counters in tag/bimodal tables
 	int predictionVal = -1;
 	int altPredVal = -1;
 	if (pred.table < NUM_TAGE_TABLES)
 	{ // update prediction counters
-		//log("pred.table: ", pred.table);
+		// log("pred.table: ", pred.table);
 		predictionVal = tagTables[pred.table][pred.index].pred;
 		if (resolveDir && predictionVal < TAGE_PRED_MAX)
 		{																							// if TAKEN and pred<max
@@ -614,14 +428,14 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 		{																							// if NOT TAKEN and pred>0
 			--(tagTables[pred.table][pred.index].pred); // decrement
 		}
-		//log("altPred table ", pred.altTable);
-		//log("altPred Index ", pred.altIndex);
+		// log("altPred table ", pred.altTable);
+		// log("altPred Index ", pred.altIndex);
 
 		altPredVal = -1;
 		if (pred.altTable != NUM_TAGE_TABLES)
 			altPredVal = tagTables[pred.altTable][pred.altIndex].pred;
 
-		//log("APV: ", altPredVal);
+		// log("APV: ", altPredVal);
 
 		if (tagTables[pred.table][pred.index].u == 0 && altPredVal != -1)
 		{
@@ -633,7 +447,7 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 	}
 	else
 	{ // do the same for bimodal
-		//log("in bimod table inc");
+		// log("in bimod table inc");
 		predictionVal = bimodal[bimodalIndex].pred;
 		if (resolveDir && predictionVal < BIMODAL_PRED_MAX)
 		{
@@ -644,8 +458,8 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 			--(bimodal[bimodalIndex].pred);
 		}
 	}
-	//log("after update ctr");
-	// check age of current tag entry, given we hit an entry
+	// log("after update ctr");
+	//  check age of current tag entry, given we hit an entry
 	if (pred.table < NUM_TAGE_TABLES)
 	{																																			 // if we hit an entry
 		if ((tagTables[pred.table][pred.index].u == 0) &&										 // if entry is not useful
@@ -669,9 +483,9 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 			}
 		}
 	}
-	//log("after update new");
-	// steal entry
-	// if((!newInTable) || (newInTable && (pred.pred != resolveDir))) { //if table's not new, or pred is wrong
+	// log("after update new");
+	//  steal entry
+	//  if((!newInTable) || (newInTable && (pred.pred != resolveDir))) { //if table's not new, or pred is wrong
 	if (((predDir != resolveDir) & (pred.table > 0)))
 	{ // if pred is wrong and there was a tag miss
 		bool alloc = false;
@@ -691,7 +505,7 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 		{ // else
 			for (int i = pred.table - 1; i >= 0; i--)
 			{
-				if ((tagTables[i][tageIndex[i]].u == 0 && !(rand() % 10))) //1 out of 10 ?
+				if ((tagTables[i][tageIndex[i]].u == 0 && !(rand() % 10))) // 1 out of 10 ?
 				{
 					if (resolveDir)
 					{ // if TAKEN
@@ -709,7 +523,7 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 		}
 	}
 	//}
-	//log("after steal");
+	// log("after steal");
 	// update usefuness bit (no meta-pred)
 	if (pred.table < NUM_TAGE_TABLES)
 	{
@@ -721,8 +535,8 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 				--(tagTables[pred.table][pred.index].u); // set not useful
 		}
 	}
-	//log("after inc u");
-	// increment clock to eventually reset useful bits
+	// log("after inc u");
+	//  increment clock to eventually reset useful bits
 	clock++;
 	// for every 2^CLOCK_MAX instructions
 	if (clock == (1 << CLOCK_MAX))
@@ -745,14 +559,14 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 			}
 		}
 	}
-	//log("after clock");
-	// update the GHR
-	*GHR = (*GHR << 1);
+	// log("after clock");
+	//  update the GHR
+	GHR <<= 1;
 	if (resolveDir == TAKEN)
 	{
-		GHR->set(0, 1);
+		GHR.set(0, 1);
 	}
-	//log("set GHR");
+	// log("set GHR");
 
 	// perform folding
 	for (int i = 0; i < NUM_TAGE_TABLES; i++)
@@ -761,7 +575,7 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 		fold(&csrTag[0][i]);
 		fold(&csrTag[1][i]);
 	}
-	//log("folded");
+	// log("folded");
 
 	// update path history
 	PHR = (PHR << 1);
@@ -770,7 +584,7 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 		PHR = PHR + 1;
 	}
 	PHR = (PHR & ((1 << PHR_LEN) - 1));
-	//log("out pred");
+	// log("out pred");
 }
 
 /////////////////////////////////////////////////////////////
@@ -799,16 +613,16 @@ void PREDICTOR::initFold(csr *shift, UINT64 origLen, UINT64 newLen)
 
 void PREDICTOR::fold(csr_t *shift)
 {
-	//log("in fold");
-	shift->val = (shift->val << 1) + (*GHR)[0];
-	//log("fold 1");
+	// log("in fold");
+	shift->val = (shift->val << 1) + GHR[0];
+	// log("fold 1");
 	shift->val ^= ((shift->val & (1 << shift->newLen)) >> shift->newLen);
-	//log("fold 2 ", GHR->size());
-	//log("fold 2 ", shift->origLen);
-	shift->val ^= ((*GHR)[shift->origLen] << (shift->origLen % shift->newLen));
-	//log("fold 3");
+	// log("fold 2 ", GHR->size());
+	// log("fold 2 ", shift->origLen);
+	shift->val ^= (GHR[shift->origLen] << (shift->origLen % shift->newLen));
+	// log("fold 3");
 	shift->val &= ((1 << shift->newLen) - 1);
-	//log("fold 4");
+	// log("fold 4");
 }
 
 void PREDICTOR::TrackOtherInst(UINT64 PC, OpType opType, UINT64 branchTarget)
