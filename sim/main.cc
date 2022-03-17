@@ -17,7 +17,7 @@ using namespace std;
 #include "predictor.h"
 
 #define COUNTER unsigned long long
-#define NB_PRE_PRED 6
+//#define NB_PRE_PRED 6
 
 // int misprepred[NB_PRE_PRED] = {0};
 // int prepreds[NB_PRE_PRED][NB_PRE_PRED+1] = {{0}};
@@ -177,6 +177,7 @@ int main(int argc, char *argv[])
   ///////////////////////////////////////////////
 
   PREDICTOR brpred; // this instantiates the predictor code
+#ifdef NB_PRE_PRED
   long unsigned int misprepred[NB_PRE_PRED] = {0};
   long unsigned int not_reached[NB_PRE_PRED] = {0};
   uint32_t prepred_trace_mis_id[NB_PRE_PRED] = {0};
@@ -185,7 +186,7 @@ int main(int argc, char *argv[])
   long unsigned int entirely_well_pred = 0;
   double trace_mispred_ponder = 0.0;
   uint32_t id_circ_ppred = 0;
-
+#endif
   ///////////////////////////////////////////////
   // read each trace recrod, simulate until done
   ///////////////////////////////////////////////
@@ -401,7 +402,7 @@ int main(int argc, char *argv[])
         //     wrongsrcnode++;
         //   }
         // }
-
+#ifdef NB_PRE_PRED
         // STATS COLLECT ///////////////////////////////////////////////////////////////////
         for (int i = 0; i < NB_PRE_PRED && i < cond_branch_instruction_counter; i++)
         {
@@ -446,12 +447,13 @@ int main(int argc, char *argv[])
           entirely_well_pred++;
 
         prepred_trace_mis_id[id_circ_ppred] = NB_PRE_PRED; // reset
+#endif
 
         // PREDICTION //////////////////////////////////////////////////////////////////////
         bool predDir = false;
 
         predDir = brpred.GetPrediction(PC);
-
+#ifdef NB_PRE_PRED
         // prepredictions
         //  init
         bool prepred_dir = predDir;
@@ -488,8 +490,10 @@ int main(int argc, char *argv[])
           }
         }
 
-        // }
+
+        id_circ_ppred = (id_circ_ppred + 1) % NB_PRE_PRED;
         // prepredictions end
+#endif
 
         brpred.UpdatePredictor(PC, branchTaken, predDir, branchTarget);
 
@@ -507,7 +511,6 @@ int main(int argc, char *argv[])
           // ver2                numMispred_btbMISS++; // update mispred stats
         }
         cond_branch_instruction_counter++;
-        id_circ_ppred = (id_circ_ppred + 1) % NB_PRE_PRED;
         // ver2            if (btbDYN)
         // ver2              btb_dyn_cond_branch_instruction_counter++; //number of branches that have been N at least once after being T at least once
         // ver2            else if (btbATSF)
@@ -560,15 +563,19 @@ int main(int argc, char *argv[])
   // ver2      printf("  NUM_CONDITIONAL_BR_BTB_ATSF \t : %10llu",   btb_atsf_cond_branch_instruction_counter);
   // ver2      printf("  NUM_CONDITIONAL_BR_BTB_DYN  \t : %10llu",   btb_dyn_cond_branch_instruction_counter);
   printf("  NUM_MISPREDICTIONS          \t : %10llu\n", numMispred);
+  #ifdef NB_PRE_PRED
   for (int i = 0; i < NB_PRE_PRED; i++)
   {
     printf("    NUM_MISPREPREDICTIONS %2d \t : %10lu\t%10lu\n", i + 1, misprepred[i], not_reached[i]);
   }
+  #endif
+
   // ver2      printf("  NUM_MISPREDICTIONS_BTB_MISS \t : %10llu",   numMispred_btbMISS);
   // ver2      printf("  NUM_MISPREDICTIONS_BTB_ANSF \t : %10llu",   numMispred_btbANSF);
   // ver2      printf("  NUM_MISPREDICTIONS_BTB_ATSF \t : %10llu",   numMispred_btbATSF);
   // ver2      printf("  NUM_MISPREDICTIONS_BTB_DYN  \t : %10llu",   numMispred_btbDYN);
   printf("  MISPRED_PER_1K_INST         \t : %10.6f\n", 1000.0 * (double)(numMispred) / (double)(total_instruction_counter));
+  #ifdef NB_PRE_PRED
   for (int i = 0; i < NB_PRE_PRED; i++)
   {
     printf("    MISPREPRED_PER_1K_INST %2d\t : %10.6f\t %3.4f% \t %3.4f% \n", i + 1,
@@ -578,6 +585,7 @@ int main(int argc, char *argv[])
   }
   printf("  WELL_PRED_TRACE             \t : %10.4f %\n", 100.0 - 100.0 * (double)(trace_mispred_ponder) / (double)(cond_branch_instruction_counter));
   printf("  ENTIRELY_WELL_PRED_TRACE    \t : %10lu\n", entirely_well_pred);
+  #endif
 
   // ver2      printf("  MISPRED_PER_1K_INST_BTB_MISS\t : %10.4f",   1000.0*(double)(numMispred_btbMISS)/(double)(total_instruction_counter));
   // ver2      printf("  MISPRED_PER_1K_INST_BTB_ANSF\t : %10.4f",   1000.0*(double)(numMispred_btbANSF)/(double)(total_instruction_counter));
