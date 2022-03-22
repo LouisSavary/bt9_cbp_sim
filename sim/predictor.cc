@@ -87,14 +87,14 @@
 // 	}
 // }
 
-PREDICTOR::PREDICTOR(void) : GHR(), tageTableSize(NUM_TAGE_TABLES),
+PREDICTOR::PREDICTOR() : GHR(),
+														 tageTableSize(NUM_TAGE_TABLES),
 														 tageTagSize(NUM_TAGE_TABLES),
-														 tagTables(NUM_TAGE_TABLES), bimodal(1 << BIMODAL_SIZE),
-
-														 loopTable(1 << LOOP_TABLE_SIZE), tageHistory(NUM_TAGE_TABLES),
-
+														 tagTables(NUM_TAGE_TABLES),
+														 bimodal(1 << BIMODAL_SIZE),
+														 loopTable(1 << LOOP_TABLE_SIZE),
+														 tageHistory(NUM_TAGE_TABLES),
 														 csrIndex(NUM_TAGE_TABLES),
-
 														 csrTag(2),
 														 tageIndex(NUM_TAGE_TABLES),
 														 tageTag(NUM_TAGE_TABLES)
@@ -231,7 +231,6 @@ PREDICTOR::PREDICTOR(void) : GHR(), tageTableSize(NUM_TAGE_TABLES),
 	// log("exit init");
 	// log("tt test: ", tagTables[0][0].tag);
 }
-
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////

@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <map>
+#include <deque>
 using namespace std;
 
 #include "utils.h"
@@ -18,6 +19,28 @@ using namespace std;
 
 #define COUNTER unsigned long long
 //#define NB_PRE_PRED 6
+
+// HOTSPOT STUDY ////////////////////////////////////////////////
+#define TRACE_LENGTH 6
+#define HOTSPOT_TAG_SIZE 20
+typedef uint16_t hotspot_t ;
+#define HOTSPOT_OFFSET 8
+
+// #define PRINT_HOTSPOT
+#define PREDICT_TRACE
+#define TRACE_PRED_THRES 4000
+
+typedef struct trace_descr{
+  uint32_t cond_br[TRACE_LENGTH] = {0};
+  uint32_t block_length[TRACE_LENGTH] = {0};
+  uint64_t nb_early_exit[TRACE_LENGTH] = {0}; // [0] -> nb prediction
+  uint64_t trace_id = 0;
+  double precision = 0.0;
+  uint32_t nb_instr_tot = 0;
+  bool pred[TRACE_LENGTH] = {0};
+} trace_t;
+
+/////////////////////////////////////////////////////////////////
 
 // int misprepred[NB_PRE_PRED] = {0};
 // int prepreds[NB_PRE_PRED][NB_PRE_PRED+1] = {{0}};
@@ -161,6 +184,12 @@ void CheckHeartBeat(UINT64 numIter, UINT64 numMispred)
 
 } // void CheckHeartBeat
 
+uint64_t mask64(unsigned int length) {
+  return ((uint64_t)1 << length)-1;
+}
+uint32_t mask32(unsigned int length) {
+  return ((uint32_t)1 << length)-1;
+}
 // usage: predictor <trace>
 
 int main(int argc, char *argv[])
@@ -187,6 +216,15 @@ int main(int argc, char *argv[])
   double trace_mispred_ponder = 0.0;
   uint32_t id_circ_ppred = 0;
 #endif
+  hotspot_t hotspotness[(uint64_t)1 << HOTSPOT_TAG_SIZE];
+  uint64_t trace_trigger_address = 0;
+  vector<trace_t> trace_pred(0);
+  std::deque<uint32_t> cond_branch_histo(TRACE_LENGTH);
+  int count_fail = 0;
+  
+  for (long unsigned int i = 0; i < (uint64_t)1 << HOTSPOT_TAG_SIZE; i ++) {
+    hotspotness[(uint32_t)i] = 0;
+  }
   ///////////////////////////////////////////////
   // read each trace recrod, simulate until done
   ///////////////////////////////////////////////
@@ -449,6 +487,41 @@ int main(int argc, char *argv[])
         prepred_trace_mis_id[id_circ_ppred] = NB_PRE_PRED; // reset
 #endif
 
+        // HOTSPOT TRACE PREDICTION STAT ///////////////////////////////////////////////////
+
+
+        if (cond_branch_histo.size() >= TRACE_LENGTH) {
+          cond_branch_histo.pop_front();
+        }
+        cond_branch_histo.push_back(it->getEdge()->edgeIndex());
+
+        vector<trace_t>::iterator it_trace = trace_pred.begin();
+        while (it_trace != trace_pred.end()) {
+          
+          if (it_trace->cond_br[0] == cond_branch_histo[0]) { // only compare on the whole histo, no partial overlap
+            uint32_t num = it_trace->block_length[0];
+
+            it_trace->nb_early_exit[0]++;
+            
+            // for (int id_br = 0; id_br < cond_branch_histo.size(); id_br ++) {
+            for (int id_br = 1; id_br < TRACE_LENGTH; id_br ++) {
+                            
+              if (it_trace->cond_br[id_br] != cond_branch_histo[id_br]) {
+                it_trace->nb_early_exit[id_br] ++;
+                break;
+              } else {
+                num += it_trace->block_length[id_br];
+              }
+            }
+            if (it_trace->nb_instr_tot > 0)
+              it_trace->precision+= (double)num/(double)it_trace->nb_instr_tot;
+
+          } // end of matching trace
+
+
+          it_trace ++;
+        }
+        
         // PREDICTION //////////////////////////////////////////////////////////////////////
         bool predDir = false;
 
@@ -490,7 +563,6 @@ int main(int argc, char *argv[])
           }
         }
 
-
         id_circ_ppred = (id_circ_ppred + 1) % NB_PRE_PRED;
         // prepredictions end
 #endif
@@ -511,6 +583,98 @@ int main(int argc, char *argv[])
           // ver2                numMispred_btbMISS++; // update mispred stats
         }
         cond_branch_instruction_counter++;
+
+        // HOTSPOT /////////////////////////////////////////////////////////////////////////
+
+        // | branch target                                                 |
+        // |            null               |         tag          |  null  |
+
+        // hotspot_t key = (branchTarget>>(HOTSPOT_TAG_SIZE + HOTSPOT_OFFSET)) & mask64(HOTSPOT_KEY_SIZE);
+        uint32_t  tag = (branchTarget>>HOTSPOT_OFFSET) & mask64(HOTSPOT_TAG_SIZE);//(((uint64_t)1 << HOTSPOT_TAG_SIZE) -1);
+        
+        // if (hotspot_key[tag] == key) {
+        if (hotspotness[tag] + 1 != 0)
+          hotspotness[tag] ++;
+
+        // trigger trace prediction
+        if (hotspotness[tag] >= TRACE_PRED_THRES) {
+
+          // search for a prediction from here
+          bool no_pred_from_here = true;
+          std::vector<trace_t>::iterator it_test = trace_pred.begin();
+          while (it_test != trace_pred.end()) {
+            if (it_test->trace_id == PC + branchTaken) { 
+              no_pred_from_here = false;
+              break;
+            }
+            it_test ++;
+          }
+
+          if (no_pred_from_here) { // no prediction here yet
+
+            trace_t new_trace;
+            new_trace.trace_id = PC + branchTaken;
+            // unique if the br instrs measure more than a byte
+
+            bool useful = true;
+
+            // trace construction
+            bool prepred_dir = branchTaken;
+            bt9::BT9Reader::NodeTableIterator node_it = bt9_reader.node_table.begin();
+            node_it += it->getSrcNode()->brNodeIndex();
+            node_it.nextConditionalNode(prepred_dir); // target the next conditional br
+
+            uint64_t pc_pred = node_it->brVirtualAddr();
+
+            snd_pred = brpred;
+            snd_pred.UpdatePredictor(PC, predDir, branchTaken, 0); 
+            // take true information as if the parediction was made after branching
+
+            // new_trace.cond_br[0] = it->getEdge()->edgeIndex();
+            // new_trace.block_length[0] = node_it.getPathInstrucCount();
+            // new_trace.nb_instr_tot += new_trace.block_length[0];
+            // for (int i = 1; i < TRACE_LENGTH; i++)
+
+            for (int i = 0; i < TRACE_LENGTH; i++)
+            {
+              prepred_dir = snd_pred.GetPrediction(pc_pred);
+              int next_edge = node_it.nextConditionalNode(prepred_dir);
+
+              if (next_edge < 0) { // program's end or indirect path
+                // therefore unpredictible
+                useful = false;
+                count_fail++;
+                hotspotness[tag] /= 2;
+                break; // stops construction
+              }
+
+              new_trace.cond_br[i] = (unsigned)next_edge;
+              new_trace.block_length[i] = node_it.getPathInstrucCount();
+              new_trace.nb_instr_tot += new_trace.block_length[i];
+
+              if (i < TRACE_LENGTH - 1)
+              {
+                snd_pred.UpdatePredictor(pc_pred, prepred_dir, prepred_dir, 0);
+                pc_pred = node_it->brVirtualAddr();
+              }
+            }
+
+            if (useful) 
+              trace_pred.push_back(new_trace);
+          }
+        }
+        // } else {
+          
+        //   uint64_t i;
+        //   for (i = 0; i < ((unsigned long int)1<<HOTSPOT_TAG_SIZE); i++) {
+        //     hotspotness[i]/=2;
+        //   }
+        //   // attribute entry
+        //   if (hotspotness[tag] == 0) {
+        //     hotspotness[tag] ++;
+        //     hotspot_key[tag] = key;
+        //   }
+        // }
         // ver2            if (btbDYN)
         // ver2              btb_dyn_cond_branch_instruction_counter++; //number of branches that have been N at least once after being T at least once
         // ver2            else if (btbATSF)
@@ -550,9 +714,17 @@ int main(int argc, char *argv[])
   ///////////////////////////////////////////
   // print_stats
   ///////////////////////////////////////////
-
   // NOTE: competitors are judged solely on MISPRED_PER_1K_INST. The additional stats are just for tuning your predictors.
-
+ #ifdef PRINT_HOTSPOT
+  for (uint64_t i = 0; i < ((unsigned long int)1<<HOTSPOT_TAG_SIZE); i ++) {
+    if (hotspotness[(uint32_t)i] > 0){
+      // printf("0x%016lx\t", ((unsigned long)hotspot_key[(uint32_t)i]<< (HOTSPOT_TAG_SIZE+HOTSPOT_OFFSET)) | i<<HOTSPOT_OFFSET);
+      printf("0x%08x\t",  i<<HOTSPOT_OFFSET);
+      printf("%u\n", hotspotness[(uint32_t)i]);
+    }
+  }
+ #endif
+  printf("%d\n", count_fail);
   printf("  TRACE \t : %s", trace_path.c_str());
   printf("  NUM_INSTRUCTIONS            \t : %10llu\n", total_instruction_counter);
   printf("  NUM_BR                      \t : %10llu\n", branch_instruction_counter - 1); // JD2_2_2016 NOTE there is a dummy branch at the beginning of the trace...
@@ -563,19 +735,20 @@ int main(int argc, char *argv[])
   // ver2      printf("  NUM_CONDITIONAL_BR_BTB_ATSF \t : %10llu",   btb_atsf_cond_branch_instruction_counter);
   // ver2      printf("  NUM_CONDITIONAL_BR_BTB_DYN  \t : %10llu",   btb_dyn_cond_branch_instruction_counter);
   printf("  NUM_MISPREDICTIONS          \t : %10llu\n", numMispred);
-  #ifdef NB_PRE_PRED
+
+#ifdef NB_PRE_PRED
   for (int i = 0; i < NB_PRE_PRED; i++)
   {
     printf("    NUM_MISPREPREDICTIONS %2d \t : %10lu\t%10lu\n", i + 1, misprepred[i], not_reached[i]);
   }
-  #endif
+#endif
 
   // ver2      printf("  NUM_MISPREDICTIONS_BTB_MISS \t : %10llu",   numMispred_btbMISS);
   // ver2      printf("  NUM_MISPREDICTIONS_BTB_ANSF \t : %10llu",   numMispred_btbANSF);
   // ver2      printf("  NUM_MISPREDICTIONS_BTB_ATSF \t : %10llu",   numMispred_btbATSF);
   // ver2      printf("  NUM_MISPREDICTIONS_BTB_DYN  \t : %10llu",   numMispred_btbDYN);
   printf("  MISPRED_PER_1K_INST         \t : %10.6f\n", 1000.0 * (double)(numMispred) / (double)(total_instruction_counter));
-  #ifdef NB_PRE_PRED
+#ifdef NB_PRE_PRED
   for (int i = 0; i < NB_PRE_PRED; i++)
   {
     printf("    MISPREPRED_PER_1K_INST %2d\t : %10.6f\t %3.4f% \t %3.4f% \n", i + 1,
@@ -585,8 +758,39 @@ int main(int argc, char *argv[])
   }
   printf("  WELL_PRED_TRACE             \t : %10.4f %\n", 100.0 - 100.0 * (double)(trace_mispred_ponder) / (double)(cond_branch_instruction_counter));
   printf("  ENTIRELY_WELL_PRED_TRACE    \t : %10lu\n", entirely_well_pred);
-  #endif
+#endif
+  printf("\n");
 
+  uint32_t instr_sum = 0;
+  double   prec_sum  = 0;
+  uint64_t nb_early_exit[TRACE_LENGTH] = {0}; // [0] -> nb prediction
+
+  std::vector<trace_t>::iterator it_trace = trace_pred.begin();
+  while (it_trace != trace_pred.end()) {
+    instr_sum += it_trace->nb_instr_tot;
+    
+    double prec = 0;
+    if (it_trace->nb_early_exit[0] > 0)
+      prec = (it_trace->precision) / (double)(it_trace->nb_early_exit[0]);
+    prec_sum += prec;
+
+    printf("    TRACE %16lx ", it_trace->trace_id);
+    for (int i = 0; i < TRACE_LENGTH; i ++) 
+      printf("%4d ", it_trace->cond_br[i]);
+    printf("\t: (PRECISION: %1.6f) ",  prec);
+    
+    for (int i = 0; i < TRACE_LENGTH; i ++) {
+      nb_early_exit[i]+= it_trace->nb_early_exit[i];
+      printf("%8ld ", it_trace->nb_early_exit[i]);
+    }
+    printf("\n");
+    it_trace++;
+  }
+
+  if (!trace_pred.empty()) {
+    printf("  MEAN_TRACE_INSTRUCTION         \t : %10.6f\n",  (double)(instr_sum) / (double)(trace_pred.size()));
+    printf("  MEAN_TRACE_PRECISION           \t : %10.6f\n",  (double)(prec_sum) / (double)(trace_pred.size()));
+  }
   // ver2      printf("  MISPRED_PER_1K_INST_BTB_MISS\t : %10.4f",   1000.0*(double)(numMispred_btbMISS)/(double)(total_instruction_counter));
   // ver2      printf("  MISPRED_PER_1K_INST_BTB_ANSF\t : %10.4f",   1000.0*(double)(numMispred_btbANSF)/(double)(total_instruction_counter));
   // ver2      printf("  MISPRED_PER_1K_INST_BTB_ATSF\t : %10.4f",   1000.0*(double)(numMispred_btbATSF)/(double)(total_instruction_counter));
