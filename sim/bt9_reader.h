@@ -384,7 +384,7 @@ namespace bt9 {
                 direct      = this->operator->()->brClass().directness     == BrClass::Directness::DIRECT;
                 bool found  =  false;
                 while (!conditional && direct) {
-                    //serach for edge to take
+                    //search for edge to take
                     edge_it = bt9_reader_->edgeTableBegin_();
                     while (edge_it != bt9_reader_->edgeTableEnd_()) {
                         if (edge_it->srcNodeIndex() == index_) {
