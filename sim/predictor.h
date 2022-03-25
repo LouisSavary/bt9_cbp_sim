@@ -87,6 +87,7 @@ private:
 	bool clockState;					// clocl flip it
 	INT32 altBetterCount;			// number of times altpred is better than prd
 	time_t rng_seed;
+	float confidence; // set at each prediction
 
 public:
 	// The interface to the four functions below CAN NOT be changed
@@ -107,6 +108,8 @@ public:
 	void fold(csr_t *shift);
 
 	// Contestants can define their own functions below
+	float getConfidence();
+	float class_to_conf(int ctr_class);
 };
 
 /***********************************************************/

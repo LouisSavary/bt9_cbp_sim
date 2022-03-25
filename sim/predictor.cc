@@ -52,6 +52,13 @@
 
 #define LOG 0 // 1 if you want logs, 0 if you don't
 
+#define CONF_WEAK 0.6
+#define CONF_N_WEAK 0.7
+#define CONF_N_STRONG 0.9
+#define CONF_STRONG 1.0
+
+#define SATURATION_RATE 100
+
 /////////////// STORAGE BUDGET JUSTIFICATION //////////////////////////////////////////////////
 // Binomial table: 2^13 2-bit counters = 16Kb
 // TAGE tables: 221.5Kb (math is near initialization)
@@ -88,16 +95,16 @@
 // }
 
 PREDICTOR::PREDICTOR() : GHR(),
-														 tageTableSize(NUM_TAGE_TABLES),
-														 tageTagSize(NUM_TAGE_TABLES),
-														 tagTables(NUM_TAGE_TABLES),
-														 bimodal(1 << BIMODAL_SIZE),
-														 loopTable(1 << LOOP_TABLE_SIZE),
-														 tageHistory(NUM_TAGE_TABLES),
-														 csrIndex(NUM_TAGE_TABLES),
-														 csrTag(2),
-														 tageIndex(NUM_TAGE_TABLES),
-														 tageTag(NUM_TAGE_TABLES)
+												 tageTableSize(NUM_TAGE_TABLES),
+												 tageTagSize(NUM_TAGE_TABLES),
+												 tagTables(NUM_TAGE_TABLES),
+												 bimodal(1 << BIMODAL_SIZE),
+												 loopTable(1 << LOOP_TABLE_SIZE),
+												 tageHistory(NUM_TAGE_TABLES),
+												 csrIndex(NUM_TAGE_TABLES),
+												 csrTag(2),
+												 tageIndex(NUM_TAGE_TABLES),
+												 tageTag(NUM_TAGE_TABLES)
 
 {
 	// init logs for debugging. Only works if LOG isn't 0
@@ -230,6 +237,7 @@ PREDICTOR::PREDICTOR() : GHR(),
 	srand(rng_seed);
 	// log("exit init");
 	// log("tt test: ", tagTables[0][0].tag);
+	confidence = 0.0;
 }
 
 /////////////////////////////////////////////////////////////
@@ -260,6 +268,7 @@ bool PREDICTOR::GetPrediction(UINT64 PC)
 			loopTable[loopIndex].conf == LOOP_CONF_MAX)
 	{																		// if loop predictor is confident
 		loopTable[loopIndex].used = true; // use and return
+		confidence = CONF_STRONG;
 		return loopTable[loopIndex].pred;
 	}
 	// if prediction hasn't been made, used = false
@@ -315,20 +324,32 @@ bool PREDICTOR::GetPrediction(UINT64 PC)
 		if (pred.altTable == NUM_TAGE_TABLES)
 		{																																			// if altPred missed a table
 			pred.altPred = (bimodal[bimodalIndex].pred > BIMODAL_PRED_MAX / 2); // use bimodal
+
+			if (bimodal[bimodalIndex].pred == BIMODAL_PRED_MAX ||
+					bimodal[bimodalIndex].pred == 0)
+				confidence = CONF_STRONG;
+			else
+				confidence = CONF_WEAK;
 		}
 		else
 		{																																				 // if altpred hit a table
-			if (tagTables[pred.altTable][pred.altIndex].pred >= TAGE_PRED_MAX / 2) // use bimodal prediction
+			if (tagTables[pred.altTable][pred.altIndex].pred >= TAGE_PRED_MAX / 2) // use table prediction
 				pred.altPred = TAKEN;
 			else
 				pred.altPred = NOT_TAKEN;
+
+			confidence = class_to_conf(abs(2 * tagTables[pred.altTable][pred.altIndex].pred - TAGE_PRED_MAX));
 		}
-		if ((tagTables[pred.table][pred.index].pred != WEAKLY_NOT_TAKEN) || // if pred is not weak,
-				(tagTables[pred.table][pred.index].pred != WEAKLY_TAKEN) ||
+		if ((tagTables[pred.table][pred.index].pred != WEAKLY_NOT_TAKEN && // if pred is not weak,
+				 tagTables[pred.table][pred.index].pred != WEAKLY_TAKEN) ||
 				(tagTables[pred.table][pred.index].u != 0) || // useful,
 				(altBetterCount < ALTPRED_BET_INIT))
 		{ // altpred historically not useful
 			pred.pred = tagTables[pred.table][pred.index].pred >= TAGE_PRED_MAX / 2;
+			// '=' not needed but as prediction is not weak it does not matter
+
+			confidence = class_to_conf(abs(2 * tagTables[pred.table][pred.index].pred - TAGE_PRED_MAX)); // in {1,3,5,7}
+
 			return pred.pred; // return best prediction
 		}
 		else
@@ -339,7 +360,14 @@ bool PREDICTOR::GetPrediction(UINT64 PC)
 	else
 	{																																			// if both missed
 		pred.altPred = (bimodal[bimodalIndex].pred > BIMODAL_PRED_MAX / 2); // use bimodal table prediction
-		return pred.altPred;																								// return alt-pred
+
+		if (bimodal[bimodalIndex].pred == BIMODAL_PRED_MAX ||
+				bimodal[bimodalIndex].pred == 0)
+			confidence = CONF_STRONG;
+		else
+			confidence = CONF_WEAK;
+
+		return pred.altPred; 																								// return alt-pred
 	}
 	// log("out pred");
 }
@@ -350,6 +378,7 @@ bool PREDICTOR::GetPrediction(UINT64 PC)
 void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64 branchTarget)
 {
 	// log("in update");
+	confidence = 0.0;
 	bool newInTable;
 	UINT32 bimodalIndex = (PC) % (bimodal.size()); // get bimodal index
 
@@ -414,23 +443,25 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 	// log("after loop:");
 	//  update prediction counters in tag/bimodal tables
 	int predictionVal = -1;
-	int altPredVal = -1;
+	// int altPredVal = -1;
 	if (pred.table < NUM_TAGE_TABLES)
 	{ // update prediction counters
 		// log("pred.table: ", pred.table);
 		predictionVal = tagTables[pred.table][pred.index].pred;
-		if (resolveDir && predictionVal < TAGE_PRED_MAX)
+		if (resolveDir && (predictionVal < TAGE_PRED_MAX-1 ||
+				(predictionVal == TAGE_PRED_MAX-1 && !(rand() % SATURATION_RATE)))) // saturate counter only 1 out of SATURATION_RATE
 		{																							// if TAKEN and pred<max
 			++(tagTables[pred.table][pred.index].pred); // increment
 		}
-		else if (!resolveDir && predictionVal > 0)
+		else if (!resolveDir && (predictionVal > 1 ||
+					(predictionVal == 1 && !(rand() % SATURATION_RATE))))
 		{																							// if NOT TAKEN and pred>0
 			--(tagTables[pred.table][pred.index].pred); // decrement
 		}
 		// log("altPred table ", pred.altTable);
 		// log("altPred Index ", pred.altIndex);
 
-		altPredVal = -1;
+		int altPredVal = -1;
 		if (pred.altTable != NUM_TAGE_TABLES)
 			altPredVal = tagTables[pred.altTable][pred.altIndex].pred;
 
@@ -438,9 +469,11 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 
 		if (tagTables[pred.table][pred.index].u == 0 && altPredVal != -1)
 		{
-			if (resolveDir && altPredVal < TAGE_PRED_MAX)
+			if (resolveDir && (altPredVal < TAGE_PRED_MAX -1 ||
+					 (altPredVal == TAGE_PRED_MAX -1 && !(rand() % SATURATION_RATE))))
 				++(tagTables[pred.altTable][pred.altIndex].pred);
-			else if (!resolveDir && altPredVal > 0)
+			else if (!resolveDir && (altPredVal > 1 ||
+						(altPredVal == 1 && !(rand() %SATURATION_RATE))))
 				--(tagTables[pred.altTable][pred.altIndex].pred);
 		}
 	}
@@ -622,6 +655,29 @@ void PREDICTOR::fold(csr_t *shift)
 	// log("fold 3");
 	shift->val &= ((1 << shift->newLen) - 1);
 	// log("fold 4");
+}
+
+float PREDICTOR::getConfidence()
+{
+	return confidence;
+}
+
+float PREDICTOR::class_to_conf(int ctr_class)
+{
+	switch (ctr_class)
+	{
+	case 7:
+		return CONF_STRONG;
+	case 5:
+		return CONF_N_STRONG;
+	case 3:
+		return CONF_N_WEAK;
+	case 1:
+		return CONF_WEAK;
+
+	default:
+		return 0;
+	}
 }
 
 void PREDICTOR::TrackOtherInst(UINT64 PC, OpType opType, UINT64 branchTarget)
