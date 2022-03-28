@@ -6,9 +6,10 @@
 
 require ( "./bench_list.pl");
 
-$stat      = "MISPRED_PER_1K_INST";
-$statscnd  = "MISPREPRED_PER_1K_INST";
-$statthrd  = "WELL_PRED_TRACE";
+$statsize  = 3;
+my @stat   = ("MISPRED_PER_1K_INST", "MEAN_TRACE_PRECISION", "MEAN_TRACE_USAGE");
+# $statscnd  = "MEAN_TRACE_PRECISION";
+# $statthrd  = "MEAN_TRACE_USAGE";
 $wsuite    = "all";
 $max_dirs  = 1024;
 $amean     = 1;  # always print amean
@@ -56,8 +57,8 @@ while (@ARGV) {
 	    $mydir .= "/";
 	    push (@dirs, $mydir);
 	}
-    }elsif ($option eq "-s") {
-        $stat = shift;
+    # }elsif ($option eq "-s") {
+    #     $stat = shift;
     }elsif ($option eq "-w") {
         $wsuite = shift;
     }elsif ($option eq "-debug") {
@@ -134,26 +135,24 @@ sub get_stats{
             $num_words = scalar(@words);
             
             for($jj=0; $jj<$num_words-1; $jj++){
-                if($words[$jj] && ($words[$jj] eq $stat) ){
+                if($words[$jj] && ($words[$jj] eq $stat[0]) ){
                     $pos = $jj+2;
                     $val = $words[$pos];
                     $data[$dirnum][$ii][0] += $val;
-                    printf "stat match for $stat found for $_" if($debug);
+                    printf "stat match for $stat[$idstat] found for $_" if($debug);
                     $found++;
                 }
-                if($words[$jj] && ($words[$jj] eq $statscnd) ){
-                    $pos = $jj+3;
-                    $pos2= $jj+1;
+                if($words[$jj] && ($words[$jj] eq $stat[1]) ){
+                    $pos = $jj+2;
                     $val = $words[$pos];
-                    $val2= $words[$pos2];
-                    $data[$dirnum][$ii][$val2] += $val;
+                    $data[$dirnum][$ii][1] += $val;
                     printf "stat match for $stat $val2 found for $_" if($debug);
                     #$found++;
                 }
-                if($words[$jj] && ($words[$jj] eq $statthrd) ){
+                if($words[$jj] && ($words[$jj] eq $stat[2]) ){
                     $pos = $jj+2;
                     $val = $words[$pos];
-                    $data[$dirnum][$ii][$prepred+1] += $val;
+                    $data[$dirnum][$ii][2] += $val;
                     printf "stat match for $stat found for $_" if($debug);
                     $found++;
                 }
@@ -196,7 +195,7 @@ sub print_stats{
         printf("\n%-20s\t", $wstring);
 
         for($dirnum=0; $dirnum < @dirs ; $dirnum++){
-            for ($iii = 0; $iii < $prepred+2; $iii++){
+            for ($iii = 0; $iii < 1+2; $iii++){
                 $val     = $data[$dirnum][$ii][$iii];
                 print_val();
             }
@@ -226,29 +225,39 @@ sub print_amean{
 
 
     for($dirnum=0; $dirnum < @dirs; $dirnum++){
-	    for($statnum=0; $statnum <= $prepred+1; $statnum++ ){
+	    for($statnum=0; $statnum <= 2; $statnum++ ){
             $dir_sums[$dirnum][$statnum]=0;
             for($ii=0; $ii< $num_w; $ii++){
                 $dir_sums[$dirnum][$statnum] += $data[$dirnum][$ii][$statnum];
             }
         }
+        
+        printf("\n%-20s\t", "AMEAN");
+        $val = $dir_sums[$dirnum][0]/$num_w;
+        print_val();
+        
+        printf("\n%-20s\t", "AMEAN PRECISION");
+        $val = $dir_sums[$dirnum][1]/$num_w;
+        print_val();
+        
+        printf("\n%-20s\t", "AMEAN USAGE");
+        $val = $dir_sums[$dirnum][2]/$num_w;
+        print_val();
+
     }
-    
-    printf("\n%-20s\t", "AMEAN");
-    
-    for($dirnum=0; $dirnum < @dirs; $dirnum++){
-        for($statnum=0; $statnum <= $prepred+1; $statnum++){
-            $val = $dir_sums[$dirnum][$statnum]/$num_w;
-            print_val();
+
+    # for($dirnum=0; $dirnum < @dirs; $dirnum++){
+    #         $val = $dir_sums[$dirnum][$statnum]/$num_w;
+    #         print_val();
             
-            if ($statnum < $prepred){
-                printf("\n%-18s %d\t", "AMEAN", $statnum+1);
-            }
-            if ($statnum == $prepred){
-                printf("\n%-20s\t", "AMEAN TRACE");
-            }
-        }
-    }
+    #         if ($statnum < $preped){
+    #             printf("\n%-18s %d\t", "AMEAN PRECISION", $statnum+1);
+    #         }
+    #         if ($statnum == $prepred){
+    #             printf("\n%-20s\t", "AMEAN TRACE");
+    #         }
+        
+    # }
     
     
     # printf("\n%-20s\t", "AMEAN");
