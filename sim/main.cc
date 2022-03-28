@@ -27,25 +27,26 @@ using namespace std;
 typedef uint16_t hotspot_t ;
 #define HOTSPOT_OFFSET 4
 #define HOTSPOT_ASSOCIATIVITY 2
-#define HOTSPOT_AVERAGE_MAX 3000 //?
+#define HOTSPOT_AVERAGE_MAX 8000 //?
 
 // #define PRINT_HOTSPOT
 #define PRINT_TRACES
 #define PREDICT_TRACE
 #define TRACE_PRED_TRIG_THRES 2000
 #define TRACE_INST_LENG_THRES 200
-#define TRACE_CONF_THRES 0.5
+#define TRACE_CONF_THRES 0.7
 
 typedef struct trace_descr{
   uint32_t cond_br[TRACE_LENGTH] = {0};
   uint32_t block_length[TRACE_LENGTH] = {0};
-  uint64_t nb_early_exit[TRACE_LENGTH] = {0}; // [0] -> nb prediction
+  uint64_t nb_early_exit[TRACE_LENGTH] = {0}; // [0] -> nb prediction (not sure)
   uint64_t trace_id = 0;
   double precision = 0.0;
   float confidence = 1.0;
   uint32_t nb_instr_tot = 0;
   uint16_t length = 0;
   bool pred[TRACE_LENGTH] = {0};
+  int count_use = 0;
 } trace_t;
 
 /////////////////////////////////////////////////////////////////
@@ -226,7 +227,7 @@ int main(int argc, char *argv[])
 #endif
   hotspot_t hotspotness[(uint64_t)1 << HOTSPOT_KEY_SIZE][HOTSPOT_ASSOCIATIVITY];
   hotspot_t hotspot_tag[(uint64_t)1 << HOTSPOT_KEY_SIZE][HOTSPOT_ASSOCIATIVITY];
-  uint64_t trace_trigger_address = 0;
+  
   vector<trace_t> trace_pred(0);
   std::deque<uint32_t> cond_branch_histo(TRACE_LENGTH);
   int count_fail = 0;
@@ -502,41 +503,22 @@ int main(int argc, char *argv[])
         // HOTSPOT TRACE PREDICTION STAT ///////////////////////////////////////////////////
 
 
-        if (cond_branch_histo.size() >= TRACE_LENGTH) {
-          cond_branch_histo.pop_front();
-        }
-        cond_branch_histo.push_back(it->getEdge()->edgeIndex());
-
-        vector<trace_t>::iterator it_trace = trace_pred.begin();
-        while (it_trace != trace_pred.end()) {
-          
-          if (it_trace->cond_br[0] == cond_branch_histo[0]) { // only compare on the whole histo, no partial overlap
-            uint32_t num = it_trace->block_length[0];
-
-            it_trace->nb_early_exit[0]++;
-            
-            // for (int id_br = 0; id_br < cond_branch_histo.size(); id_br ++) {
-            for (int id_br = 1; id_br < TRACE_LENGTH; id_br ++) {
-                            
-              if (it_trace->cond_br[id_br] != cond_branch_histo[id_br]) {
-                it_trace->nb_early_exit[id_br] ++;
-                break;
-              } else {
-                num += it_trace->block_length[id_br];
-              }
-            }
-            if (it_trace->nb_instr_tot > 0)
-              it_trace->precision+= (double)num/(double)it_trace->nb_instr_tot;
-
-          } // end of matching trace
-
-
-          it_trace ++;
-        }
-
-
         if (current_trace != nullptr) {
           // if mispred -> quit trace
+          if (current_trace->cond_br[current_trace_it] != it->getEdge()->edgeIndex()) {
+            // TODO all sorts of metrics
+            current_trace->nb_early_exit[current_trace_it] ++;
+            // leave trace
+            current_trace = nullptr;
+            current_trace_it = 0;
+          } else {
+            current_trace_it ++;
+            if (current_trace_it >= current_trace->length) {
+              current_trace->precision += 1;
+              current_trace = nullptr;
+              current_trace_it = 0;
+            }
+          }
           // 
           // count
         }
@@ -622,11 +604,11 @@ int main(int argc, char *argv[])
             if (hotspotness[key][it_way] + 1 != 0) // not max yet
               hotspotness[key][it_way] ++;
 
-            counter_sum += hotspotness[key][it_way] / HOTSPOT_ASSOCIATIVITY;
+            counter_sum += hotspotness[key][it_way] ;
             break;
             
           }
-          if (counter_sum > HOTSPOT_AVERAGE_MAX)
+          if (counter_sum / HOTSPOT_ASSOCIATIVITY > HOTSPOT_AVERAGE_MAX)
             for (int it_way = 0; it_way < HOTSPOT_ASSOCIATIVITY; it_way ++) 
               hotspotness[key][it_way] = (hotspotness[key][it_way] +1)/2;
               // ceiled half
@@ -674,6 +656,7 @@ int main(int argc, char *argv[])
                   //branch into the trace
                   current_trace = it_test.base();
                   current_trace_it = 0;
+                  current_trace->count_use ++;
                 }
                 
                 no_pred_from_here = false;
@@ -734,8 +717,12 @@ int main(int argc, char *argv[])
                 }
               }
 
-              if (useful && new_trace.confidence >= TRACE_CONF_THRES)
+              if (useful && new_trace.confidence >= TRACE_CONF_THRES) {
+
                 trace_pred.push_back(new_trace);
+
+                // branch immediatly in it (if able) or consider a schedule time
+              }
             } 
           }
         }
@@ -832,38 +819,63 @@ int main(int argc, char *argv[])
   double   prec_sum  = 0;
   uint64_t nb_early_exit[TRACE_LENGTH] = {0}; // [0] -> nb prediction
 
-#ifdef PRINT_TRACES
   std::vector<trace_t>::iterator it_trace = trace_pred.begin();
+  long long unsigned int trace_instr_exec = 0;
+  unsigned int unused_trace = 0;
   while (it_trace != trace_pred.end()) {
     instr_sum += it_trace->nb_instr_tot;
     
     double prec = 0;
-    if (it_trace->nb_early_exit[0] > 0)
-      prec = (it_trace->precision) / (double)(it_trace->nb_early_exit[0]);
+    if (it_trace->count_use > 0)
+      prec = (it_trace->precision) / (double)(it_trace->count_use);
     prec_sum += prec;
 
-    printf("    TRACE %16lx ", it_trace->trace_id);
-    for (int i = 0; i < it_trace->length; i ++) 
-      printf("%4d ", it_trace->cond_br[i]);
-    printf("\t: (PREC:%1.4f) (CONF:%1.4f) ",  prec, it_trace->confidence);
-    
+    // printf("    TRACE %16lx ", it_trace->trace_id);
+    int factor = it_trace->count_use;
+    unused_trace += (it_trace->count_use == 0);
+
+
     for (int i = 0; i < it_trace->length; i ++) {
+      factor -= it_trace->nb_early_exit[i];
+      trace_instr_exec += factor*it_trace->block_length[i];
       nb_early_exit[i]+= it_trace->nb_early_exit[i];
+
+    }
+
+
+#ifdef PRINT_TRACES
+    printf("    TRACE ");
+    for (int i = 0; i < it_trace->length; i ++) {
+      printf("%4d ", it_trace->cond_br[i]);
+    }
+    for (int i = 0; i < TRACE_LENGTH - it_trace->length; i ++) {
+      printf("     ");
+    }
+
+    printf(": (PREC:%1.4f) (CONF:%1.4f) (USE:%6d) ",  prec, it_trace->confidence, it_trace->count_use);
+ 
+
+    for (int i = 0; i < it_trace->length; i ++) {
+
       printf("%8ld ", it_trace->nb_early_exit[i]);
     }
     printf("\n");
+#endif
+
+
     it_trace++;
   }
   printf("NB_EARLY_EXIT :");
   for (int i = 0; i < TRACE_LENGTH; i ++) {
-    printf(" %8d", nb_early_exit[i]);
+    printf(" %8ld", nb_early_exit[i]);
   }
   printf("\n");
-#endif
 
   if (!trace_pred.empty()) {
     printf("  MEAN_TRACE_INSTRUCTION         \t : %10.6f\n",  (double)(instr_sum) / (double)(trace_pred.size()));
     printf("  MEAN_TRACE_PRECISION           \t : %10.6f\n",  (double)(prec_sum) / (double)(trace_pred.size()));
+    printf("  MEAN_TRACE_USAGE               \t : %10.6f\n",  (double)trace_instr_exec/(double)total_instruction_counter);
+    printf("  UNUSED_TRACE_PER               \t : %10.6f\n",  100*(double)unused_trace/(double)(trace_pred.size()));
   }
 #endif
 
