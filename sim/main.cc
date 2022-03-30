@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <map>
-#include <deque>
+#include <list>
 using namespace std;
 
 #include "utils.h"
@@ -24,19 +24,20 @@ using namespace std;
 #define TRACE_LENGTH 6
 #define HOTSPOT_KEY_SIZE 10
 #define HOTSPOT_TAG_SIZE 10
-typedef uint16_t hotspot_t ;
+typedef uint16_t hotspot_t;
 #define HOTSPOT_OFFSET 4
 #define HOTSPOT_ASSOCIATIVITY 2
-#define HOTSPOT_AVERAGE_MAX 8000 //?
+#define HOTSPOT_AVERAGE_MAX 20000 //?
 
 // #define PRINT_HOTSPOT
 #define PRINT_TRACES
 #define PREDICT_TRACE
-#define TRACE_PRED_TRIG_THRES 2000
-#define TRACE_INST_LENG_THRES 200
+#define TRACE_PRED_TRIG_THRES 5000
+#define TRACE_INST_LENG_THRES 256
 #define TRACE_CONF_THRES 0.7
 
-typedef struct trace_descr{
+typedef struct trace_descr
+{
   uint32_t cond_br[TRACE_LENGTH] = {0};
   uint32_t block_length[TRACE_LENGTH] = {0};
   uint64_t nb_early_exit[TRACE_LENGTH] = {0}; // [0] -> nb prediction (not sure)
@@ -46,7 +47,7 @@ typedef struct trace_descr{
   uint32_t nb_instr_tot = 0;
   uint16_t length = 0;
   bool pred[TRACE_LENGTH] = {0};
-  int count_use = 0;
+  uint32_t count_use = 0;
 } trace_t;
 
 /////////////////////////////////////////////////////////////////
@@ -193,11 +194,13 @@ void CheckHeartBeat(UINT64 numIter, UINT64 numMispred)
 
 } // void CheckHeartBeat
 
-uint64_t mask64(unsigned int length) {
-  return ((uint64_t)1 << length)-1;
+uint64_t mask64(unsigned int length)
+{
+  return ((uint64_t)1 << length) - 1;
 }
-uint32_t mask32(unsigned int length) {
-  return ((uint32_t)1 << length)-1;
+uint32_t mask32(unsigned int length)
+{
+  return ((uint32_t)1 << length) - 1;
 }
 // usage: predictor <trace>
 
@@ -227,13 +230,13 @@ int main(int argc, char *argv[])
 #endif
   hotspot_t hotspotness[(uint64_t)1 << HOTSPOT_KEY_SIZE][HOTSPOT_ASSOCIATIVITY];
   hotspot_t hotspot_tag[(uint64_t)1 << HOTSPOT_KEY_SIZE][HOTSPOT_ASSOCIATIVITY];
-  
-  vector<trace_t> trace_pred(0);
-  std::deque<uint32_t> cond_branch_histo(TRACE_LENGTH);
+
+  list<trace_t> trace_pred(0);
   int count_fail = 0;
-  
-  for (long unsigned int i = 0; i < (uint64_t)1 << HOTSPOT_KEY_SIZE; i ++) {
-    for (int j = 0; j < HOTSPOT_ASSOCIATIVITY; j ++)
+
+  for (long unsigned int i = 0; i < (uint64_t)1 << HOTSPOT_KEY_SIZE; i++)
+  {
+    for (int j = 0; j < HOTSPOT_ASSOCIATIVITY; j++)
       hotspotness[(uint32_t)i][j] = 0;
   }
   ///////////////////////////////////////////////
@@ -286,8 +289,8 @@ int main(int argc, char *argv[])
   bool branchTaken;
   UINT64 branchTarget;
   UINT64 numIter = 0;
-  trace_t* current_trace = nullptr;
-  int current_trace_it = 0;
+  trace_t *current_trace = nullptr;
+  short unsigned int current_trace_it = 0;
 
   for (auto it = bt9_reader.begin(); it != bt9_reader.end(); ++it)
   {
@@ -502,24 +505,31 @@ int main(int argc, char *argv[])
 #ifdef TRACE_LENGTH
         // HOTSPOT TRACE PREDICTION STAT ///////////////////////////////////////////////////
 
-
-        if (current_trace != nullptr) {
+        if (current_trace != nullptr)
+        {
           // if mispred -> quit trace
-          if (current_trace->cond_br[current_trace_it] != it->getEdge()->edgeIndex()) {
+          
+          uint32_t trace_br = current_trace->cond_br[current_trace_it];
+          uint32_t it_br = it->getEdge()->edgeIndex();
+          if (trace_br != it_br)
+          {
             // TODO all sorts of metrics
-            current_trace->nb_early_exit[current_trace_it] ++;
+            current_trace->nb_early_exit[current_trace_it]++;
             // leave trace
             current_trace = nullptr;
             current_trace_it = 0;
-          } else {
-            current_trace_it ++;
-            if (current_trace_it >= current_trace->length) {
+          }
+          else
+          {
+            current_trace_it++;
+            if (current_trace_it >= current_trace->length)
+            {
               current_trace->precision += 1;
               current_trace = nullptr;
               current_trace_it = 0;
             }
           }
-          // 
+          //
           // count
         }
 #endif
@@ -593,82 +603,112 @@ int main(int argc, char *argv[])
         // | branch target                                                 |
         // |         null         |      tag      |      key      |  null  |
 
-        hotspot_t tag = (branchTarget>>(HOTSPOT_KEY_SIZE + HOTSPOT_OFFSET)) & mask64(HOTSPOT_TAG_SIZE);
-        uint32_t  key = (branchTarget>>HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE);
+        hotspot_t tag = (branchTarget >> (HOTSPOT_KEY_SIZE + HOTSPOT_OFFSET)) & mask64(HOTSPOT_TAG_SIZE);
+        uint32_t key = (branchTarget >> HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE);
 
+        // find corresponding way in hotspot cache
         int way = -1;
-        for (int it_way = 0; it_way < HOTSPOT_ASSOCIATIVITY; it_way ++) {
+        for (int it_way = 0; it_way < HOTSPOT_ASSOCIATIVITY; it_way++)
+        {
           hotspot_t counter_sum = 0;
-          if (hotspot_tag[key][it_way] == tag) {
+          if (hotspot_tag[key][it_way] == tag)
+          {
             way = it_way;
             if (hotspotness[key][it_way] + 1 != 0) // not max yet
-              hotspotness[key][it_way] ++;
+              hotspotness[key][it_way]++;
 
-            counter_sum += hotspotness[key][it_way] ;
+            counter_sum += hotspotness[key][it_way];
             break;
-            
           }
           if (counter_sum / HOTSPOT_ASSOCIATIVITY > HOTSPOT_AVERAGE_MAX)
-            for (int it_way = 0; it_way < HOTSPOT_ASSOCIATIVITY; it_way ++) 
-              hotspotness[key][it_way] = (hotspotness[key][it_way] +1)/2;
-              // ceiled half
+            for (int it_way = 0; it_way < HOTSPOT_ASSOCIATIVITY; it_way++)
+              hotspotness[key][it_way] = (hotspotness[key][it_way] + 1) / 2;
+          // ceiled half
         }
 
-        if (way == -1) { // is not in cache
+        if (way == -1)
+        { // is not in cache
           bool free_way = false;
-          for (int i = 0; i < HOTSPOT_ASSOCIATIVITY; i ++)
-            if (hotspotness[key][i] == 0) { // place it in this entry
+          for (int i = 0; i < HOTSPOT_ASSOCIATIVITY; i++)
+            if (hotspotness[key][i] == 0)
+            { // place it in this entry
               hotspot_tag[key][i] = tag;
               hotspotness[key][i] = 1;
               free_way = true;
             }
 
-          if (!free_way) { // eviction
+          if (!free_way)
+          { // eviction
             uint16_t min_counter = hotspotness[key][0];
             uint16_t evict_way = 0;
 
-            for (int i = 0; i < HOTSPOT_ASSOCIATIVITY; i ++) 
-              if (hotspotness[key][i] < min_counter) {
+            for (int i = 0; i < HOTSPOT_ASSOCIATIVITY; i++)
+              if (hotspotness[key][i] < min_counter)
+              {
                 evict_way = i;
                 min_counter = hotspotness[key][i];
               }
 
-            //evict selected way
+            // TODO evict trace if any ?
+            // trace evictions screw the metrics
+            // evict useless traces
+            hotspot_t evict_tag = hotspot_tag[key][evict_way];
+            list<trace_t>::iterator evict_it = trace_pred.begin();
+            while (evict_it != trace_pred.end())
+            {
+              uint64_t evict_id = (evict_it->trace_id >> HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE + HOTSPOT_TAG_SIZE);
+
+              if (evict_id == (key | evict_tag << HOTSPOT_KEY_SIZE) &&
+                  evict_it->count_use == 0) // 0 implies it is not the current trace
+              {
+                evict_it = trace_pred.erase(evict_it);
+              }
+              else
+              {
+                evict_it++;
+              }
+            }
+
+            // evict selected way
             hotspotness[key][evict_way] = 1;
             hotspot_tag[key][evict_way] = tag;
-
-            // TODO evict trace if any ?
-
           }
         }
 
-        for (int way = 0; way < HOTSPOT_ASSOCIATIVITY; way ++) {
+        for (int way = 0; way < HOTSPOT_ASSOCIATIVITY; way++)
+        {
           // trigger trace prediction
-          if (hotspotness[key][way] >= TRACE_PRED_TRIG_THRES) {
+          if (hotspotness[key][way] >= TRACE_PRED_TRIG_THRES)
+          {
 
             // search for a prediction from here
             bool no_pred_from_here = true;
-            std::vector<trace_t>::iterator it_test = trace_pred.begin();
-            while (it_test != trace_pred.end()) {
-              if (it_test->trace_id == PC + branchTaken) { 
-                
-                if (current_trace == nullptr) {
-                  //branch into the trace
-                  current_trace = it_test.base();
+            list<trace_t>::iterator it_test = trace_pred.begin();
+            while (it_test != trace_pred.end())
+            {
+              if (it_test->trace_id == branchTarget + branchTaken)
+              {
+
+                if (current_trace == nullptr)
+                {
+                  // branch into the trace
+                  current_trace = &*it_test;
                   current_trace_it = 0;
-                  current_trace->count_use ++;
+                  if (current_trace->count_use +1 != 0) //saturation
+                    current_trace->count_use++;
                 }
-                
+
                 no_pred_from_here = false;
                 break;
               }
-              it_test ++;
+              it_test++;
             }
 
-            if (no_pred_from_here) { // no prediction here yet
+            if (no_pred_from_here)
+            { // no prediction here yet
 
               trace_t new_trace;
-              new_trace.trace_id = PC + branchTaken;
+              new_trace.trace_id = branchTarget + branchTaken;
               // unique if the br instrs measure more than a byte
 
               bool useful = true;
@@ -682,7 +722,7 @@ int main(int argc, char *argv[])
               uint64_t pc_pred = node_it->brVirtualAddr();
 
               snd_pred = brpred;
-              snd_pred.UpdatePredictor(PC, predDir, branchTaken, 0); 
+              snd_pred.UpdatePredictor(PC, predDir, branchTaken, 0);
               // take true information as if the parediction was made after branching
 
               for (int i = 0; i < TRACE_LENGTH; i++)
@@ -690,10 +730,11 @@ int main(int argc, char *argv[])
                 prepred_dir = snd_pred.GetPrediction(pc_pred);
                 int next_edge = node_it.nextConditionalNode(prepred_dir);
 
-
-                if (next_edge < 0) { // program's end or indirect path
+                if (next_edge < 0)
+                { // program's end or indirect path
                   // therefore unpredictible
-                  if (new_trace.nb_instr_tot < TRACE_INST_LENG_THRES) {
+                  if (new_trace.nb_instr_tot < TRACE_INST_LENG_THRES)
+                  {
                     useful = false;
                     count_fail++;
                     hotspotness[key][way] /= 2;
@@ -708,7 +749,7 @@ int main(int argc, char *argv[])
                 new_trace.cond_br[i] = (unsigned)next_edge;
                 new_trace.block_length[i] = node_it.getPathInstrucCount();
                 new_trace.nb_instr_tot += new_trace.block_length[i];
-                new_trace.length = i+1;
+                new_trace.length = i + 1;
 
                 if (i < TRACE_LENGTH - 1)
                 {
@@ -717,13 +758,14 @@ int main(int argc, char *argv[])
                 }
               }
 
-              if (useful && new_trace.confidence >= TRACE_CONF_THRES) {
+              if (useful && new_trace.confidence >= TRACE_CONF_THRES)
+              {
 
                 trace_pred.push_back(new_trace);
 
                 // branch immediatly in it (if able) or consider a schedule time
               }
-            } 
+            }
           }
         }
 #endif
@@ -768,15 +810,17 @@ int main(int argc, char *argv[])
   // print_stats
   ///////////////////////////////////////////
   // NOTE: competitors are judged solely on MISPRED_PER_1K_INST. The additional stats are just for tuning your predictors.
- #ifdef PRINT_HOTSPOT
-  for (uint64_t i = 0; i < ((unsigned long int)1<<HOTSPOT_KEY_SIZE); i ++) {
-    for (int j = 0; j < HOTSPOT_ASSOCIATIVITY; j ++)
-    if (hotspotness[(uint32_t)i][j] > 0){
-      printf("0x%08x\t",  i<<HOTSPOT_OFFSET + (hotspot_tag[i][j])<<(HOTSPOT_OFFSET+HOTSPOT_KEY_SIZE));
-      printf("%u\n", hotspotness[(uint32_t)i][j]);
-    }
+#ifdef PRINT_HOTSPOT
+  for (uint64_t i = 0; i < ((unsigned long int)1 << HOTSPOT_KEY_SIZE); i++)
+  {
+    for (int j = 0; j < HOTSPOT_ASSOCIATIVITY; j++)
+      if (hotspotness[(uint32_t)i][j] > 0)
+      {
+        printf("0x%08x\t", i << HOTSPOT_OFFSET + (hotspot_tag[i][j]) << (HOTSPOT_OFFSET + HOTSPOT_KEY_SIZE));
+        printf("%u\n", hotspotness[(uint32_t)i][j]);
+      }
   }
- #endif
+#endif
   printf("%d\n", count_fail);
   printf("  TRACE \t : %s", trace_path.c_str());
   printf("  NUM_INSTRUCTIONS            \t : %10llu\n", total_instruction_counter);
@@ -816,15 +860,16 @@ int main(int argc, char *argv[])
 
 #ifdef TRACE_LENGTH
   uint32_t instr_sum = 0;
-  double   prec_sum  = 0;
+  double prec_sum = 0;
   uint64_t nb_early_exit[TRACE_LENGTH] = {0}; // [0] -> nb prediction
 
-  std::vector<trace_t>::iterator it_trace = trace_pred.begin();
+  list<trace_t>::iterator it_trace = trace_pred.begin();
   long long unsigned int trace_instr_exec = 0;
   unsigned int unused_trace = 0;
-  while (it_trace != trace_pred.end()) {
+  while (it_trace != trace_pred.end())
+  {
     instr_sum += it_trace->nb_instr_tot;
-    
+
     double prec = 0;
     if (it_trace->count_use > 0)
       prec = (it_trace->precision) / (double)(it_trace->count_use);
@@ -834,48 +879,49 @@ int main(int argc, char *argv[])
     int factor = it_trace->count_use;
     unused_trace += (it_trace->count_use == 0);
 
-
-    for (int i = 0; i < it_trace->length; i ++) {
+    for (int i = 0; i < it_trace->length; i++)
+    {
       factor -= it_trace->nb_early_exit[i];
-      trace_instr_exec += factor*it_trace->block_length[i];
-      nb_early_exit[i]+= it_trace->nb_early_exit[i];
-
+      trace_instr_exec += factor * it_trace->block_length[i];
+      nb_early_exit[i] += it_trace->nb_early_exit[i];
     }
-
 
 #ifdef PRINT_TRACES
     printf("    TRACE ");
-    for (int i = 0; i < it_trace->length; i ++) {
+    for (int i = 0; i < it_trace->length; i++)
+    {
       printf("%4d ", it_trace->cond_br[i]);
     }
-    for (int i = 0; i < TRACE_LENGTH - it_trace->length; i ++) {
+    for (int i = 0; i < TRACE_LENGTH - it_trace->length; i++)
+    {
       printf("     ");
     }
 
-    printf(": (PREC:%1.4f) (CONF:%1.4f) (USE:%6d) ",  prec, it_trace->confidence, it_trace->count_use);
- 
+    printf(": (PREC:%1.4f) (CONF:%1.4f) (USE:%6d) ", prec, it_trace->confidence, it_trace->count_use);
 
-    for (int i = 0; i < it_trace->length; i ++) {
+    for (int i = 0; i < it_trace->length; i++)
+    {
 
       printf("%8ld ", it_trace->nb_early_exit[i]);
     }
     printf("\n");
 #endif
 
-
     it_trace++;
   }
   printf("NB_EARLY_EXIT :");
-  for (int i = 0; i < TRACE_LENGTH; i ++) {
+  for (int i = 0; i < TRACE_LENGTH; i++)
+  {
     printf(" %8ld", nb_early_exit[i]);
   }
   printf("\n");
 
-  if (!trace_pred.empty()) {
-    printf("  MEAN_TRACE_INSTRUCTION         \t : %10.6f\n",  (double)(instr_sum) / (double)(trace_pred.size()));
-    printf("  MEAN_TRACE_PRECISION           \t : %10.6f\n",  (double)(prec_sum) / (double)(trace_pred.size()));
-    printf("  MEAN_TRACE_USAGE               \t : %10.6f\n",  (double)trace_instr_exec/(double)total_instruction_counter);
-    printf("  UNUSED_TRACE_PER               \t : %10.6f\n",  100*(double)unused_trace/(double)(trace_pred.size()));
+  if (!trace_pred.empty())
+  {
+    printf("  MEAN_TRACE_INSTRUCTION         \t : %10.6f\n", (double)(instr_sum) / (double)(trace_pred.size()));
+    printf("  MEAN_TRACE_PRECISION           \t : %10.6f\n", (double)(prec_sum) / (double)(trace_pred.size()));
+    printf("  MEAN_TRACE_USAGE               \t : %10.6f\n", (double)trace_instr_exec / (double)total_instruction_counter);
+    printf("  UNUSED_TRACE_PER               \t : %10.6f\n", 100 * (double)unused_trace / (double)(trace_pred.size()));
   }
 #endif
 
