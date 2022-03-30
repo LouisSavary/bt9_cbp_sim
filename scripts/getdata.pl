@@ -146,14 +146,14 @@ sub get_stats{
                     $pos = $jj+2;
                     $val = $words[$pos];
                     $data[$dirnum][$ii][1] += $val;
-                    printf "stat match for $stat $val2 found for $_" if($debug);
+                    printf "stat match for $stat[1] $val found for $_" if($debug);
                     #$found++;
                 }
                 if($words[$jj] && ($words[$jj] eq $stat[2]) ){
                     $pos = $jj+2;
                     $val = $words[$pos];
                     $data[$dirnum][$ii][2] += $val;
-                    printf "stat match for $stat found for $_" if($debug);
+                    printf "stat match for $stat[2] found for $_" if($debug);
                     $found++;
                 }
             }
@@ -225,7 +225,7 @@ sub print_amean{
 
 
     for($dirnum=0; $dirnum < @dirs; $dirnum++){
-	    for($statnum=0; $statnum <= 2; $statnum++ ){
+	    for($statnum=0; $statnum < $statsize; $statnum++ ){
             $dir_sums[$dirnum][$statnum]=0;
             for($ii=0; $ii< $num_w; $ii++){
                 $dir_sums[$dirnum][$statnum] += $data[$dirnum][$ii][$statnum];
