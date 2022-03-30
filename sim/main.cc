@@ -890,7 +890,7 @@ int main(int argc, char *argv[])
     printf("    TRACE ");
     for (int i = 0; i < it_trace->length; i++)
     {
-      printf("%4d ", it_trace->cond_br[i]);
+      printf("%5d ", it_trace->cond_br[i]);
     }
     for (int i = 0; i < TRACE_LENGTH - it_trace->length; i++)
     {
