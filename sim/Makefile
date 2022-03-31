@@ -49,7 +49,7 @@ LDFLAGS += -L$(BOOST)/lib -Wl,-rpath $(BOOST)/lib
 
 CPPFLAGS := -O3 -Wall -std=c++11 -Wextra -Winline -Winit-self -Wno-sequence-point\
            -Wno-unused-function -Wno-inline -fPIC -W -Wcast-qual -Wpointer-arith -Woverloaded-virtual\
-           -I$(CBP_BASE) -I/usr/include -I/user/include/boost/ -I/usr/include/boost/iostreams/ -I/usr/include/boost/iostreams/device/ -g -pg #-fsanitize=undefined,address
+           -I$(CBP_BASE) -I/usr/include -I/user/include/boost/ -I/usr/include/boost/iostreams/ -I/usr/include/boost/iostreams/device/ -g  #-fsanitize=undefined,address
 
 PROGRAMS := predictor
 
