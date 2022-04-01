@@ -879,7 +879,7 @@ int main(int argc, char *argv[])
   double prec_sum = 0;
   // uint64_t nb_early_exit[TRACE_LENGTH] = {0}; // [0] -> nb prediction
 
-  unordered_map<hotspot_t, std::__cxx11::list<trace_t>>::iterator traces = trace_pred.begin();
+  unordered_map<hotspot_t, list<trace_t>>::iterator traces = trace_pred.begin();
   // long long unsigned int trace_instr_exec = 0;
   unsigned int unused_trace = 0;
   unsigned int nbtrace = 0;
