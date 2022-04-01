@@ -372,8 +372,11 @@ namespace bt9
                     return -2;
 
                 // else  find a conditional branch that starts from node
-                EdgeTableIterator edge_it = bt9_reader_->edgeTableBegin_();
-                while (edge_it != bt9_reader_->edgeTableEnd_())
+                list<BT9ReaderEdgeRecord> edgelist = bt9_reader_->edge_hash_table.find(node.brVirtualAddr())->second;
+                std::list<BT9ReaderEdgeRecord>::const_iterator edge_it = edgelist.begin();
+                std::list<BT9ReaderEdgeRecord>::const_iterator edge_end = edgelist.end();
+
+                while (edge_it != edge_end)
                 {
                     if (edge_it->srcNodeIndex() == index_)
                     {
@@ -413,8 +416,9 @@ namespace bt9
                 while (!conditional && direct)
                 {
                     // search for edge to take
-                    edge_it = bt9_reader_->edgeTableBegin_();
-                    while (edge_it != bt9_reader_->edgeTableEnd_())
+                    edgelist = bt9_reader_->edge_hash_table.find(this->operator->()->brVirtualAddr())->second;
+                    edge_it = edgelist.begin();
+                    while (edge_it != edgelist.end())
                     {
                         if (edge_it->srcNodeIndex() == index_)
                         {
@@ -1738,6 +1742,7 @@ namespace bt9
             if (edge_table_.find(edge_hash_key) == edge_table_.end())
             {
                 edge_table_[edge_hash_key] = edge_record;
+                edge_hash_table[src_br_virtual_pc].push_back(edge_record);
             }
             else
             {
@@ -2014,7 +2019,7 @@ namespace bt9
 
         /// BT9 internal node look-up table
         std::unordered_map<NodeTableHashKey, BT9ReaderNodeRecord> node_table_;
-
+        
         /// BT9 internal node id tracking table
         std::vector<BT9ReaderNodeRecord *> node_order_vector_;
 
@@ -2023,7 +2028,8 @@ namespace bt9
 
         /// BT9 internal edge look-up table
         std::unordered_map<EdgeTableHashKey, BT9ReaderEdgeRecord> edge_table_;
-
+        std::unordered_map<uint64_t, std::list<BT9ReaderEdgeRecord>> edge_hash_table;
+        
         /// BT9 internal edge id tracking table
         std::vector<BT9ReaderEdgeRecord *> edge_order_vector_;
 
