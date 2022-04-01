@@ -838,7 +838,6 @@ int main(int argc, char *argv[])
       }
   }
 #endif
-  printf("%d\n", count_fail);
   printf("  TRACE \t : %s", trace_path.c_str());
   printf("  NUM_INSTRUCTIONS            \t : %10llu\n", total_instruction_counter);
   printf("  NUM_BR                      \t : %10llu\n", branch_instruction_counter - 1); // JD2_2_2016 NOTE there is a dummy branch at the beginning of the trace...
@@ -937,14 +936,15 @@ int main(int argc, char *argv[])
   //   printf(" %8ld", nb_early_exit[i]);
   // }
   // printf("\n");
-  printf("  TRACE_NUMBER                   \t : %10d\n", (nbtrace));
+  printf("  TRACE_NUMBER                \t : %10d\n", (nbtrace));
+  printf("  CONSTRUCTION_FAILS          \t : %10d\n", count_fail);
 
   if (!trace_pred.empty())
   {
-    printf("  MEAN_TRACE_INSTRUCTION         \t : %10.6f\n", (double)(instr_sum) / (double)(nbtrace));
-    printf("  MEAN_TRACE_PRECISION           \t : %10.6f\n", (double)(prec_sum) / (double)(nbtrace));
-    printf("  MEAN_TRACE_USAGE               \t : %10.6f\n", (double)trace_instruction_counter / (double)total_instruction_counter);
-    printf("  UNUSED_TRACE_PER               \t : %10.6f\n", 100 * (double)unused_trace / (double)(nbtrace));
+    printf("  MEAN_TRACE_INSTRUCTION      \t : %10.6f\n", (double)(instr_sum) / (double)(nbtrace));
+    printf("  MEAN_TRACE_PRECISION        \t : %10.6f\n", (double)(prec_sum) / (double)(nbtrace));
+    printf("  MEAN_TRACE_USAGE            \t : %10.6f\n", (double)trace_instruction_counter / (double)total_instruction_counter);
+    printf("  UNUSED_TRACE_PER            \t : %10.6f\n", 100 * (double)unused_trace / (double)(nbtrace));
   }
 #endif
 

@@ -6,8 +6,8 @@
 
 require ( "./bench_list.pl");
 
-$statsize  = 3;
-my @stat   = ("MISPRED_PER_1K_INST", "MEAN_TRACE_PRECISION", "MEAN_TRACE_USAGE");
+$statsize  = 6;
+my @stat   = ("MISPRED_PER_1K_INST", "MEAN_TRACE_PRECISION", "MEAN_TRACE_USAGE", "MEAN_TRACE_INSTRUCTION", "TRACE_NUMBER", "CONSTRUCTION_FAILS");
 # $statscnd  = "MEAN_TRACE_PRECISION";
 # $statthrd  = "MEAN_TRACE_USAGE";
 $wsuite    = "all";
@@ -135,26 +135,14 @@ sub get_stats{
             $num_words = scalar(@words);
             
             for($jj=0; $jj<$num_words-1; $jj++){
-                if($words[$jj] && ($words[$jj] eq $stat[0]) ){
-                    $pos = $jj+2;
-                    $val = $words[$pos];
-                    $data[$dirnum][$ii][0] += $val;
-                    printf "stat match for $stat[$idstat] found for $_" if($debug);
-                    $found++;
-                }
-                if($words[$jj] && ($words[$jj] eq $stat[1]) ){
-                    $pos = $jj+2;
-                    $val = $words[$pos];
-                    $data[$dirnum][$ii][1] += $val;
-                    printf "stat match for $stat[1] $val found for $_" if($debug);
-                    #$found++;
-                }
-                if($words[$jj] && ($words[$jj] eq $stat[2]) ){
-                    $pos = $jj+2;
-                    $val = $words[$pos];
-                    $data[$dirnum][$ii][2] += $val;
-                    printf "stat match for $stat[2] found for $_" if($debug);
-                    $found++;
+                for($jjj=0; $jjj<$statsize; $jjj++){
+                    if($words[$jj] && ($words[$jj] eq $stat[$jjj]) ){
+                        $pos = $jj+2;
+                        $val = $words[$pos];
+                        $data[$dirnum][$ii][$jjj] += $val;
+                        printf "stat match for $stat[$jjj] found for $_" if($debug);
+                        $found++;
+                    }
                 }
             }
 	    }
@@ -232,7 +220,7 @@ sub print_amean{
             }
         }
         
-        printf("\n%-20s\t", "AMEAN");
+        printf("\n%-20s\t", "AMEAN MISPRED");
         $val = $dir_sums[$dirnum][0]/$num_w;
         print_val();
         
@@ -242,6 +230,16 @@ sub print_amean{
         
         printf("\n%-20s\t", "AMEAN USAGE");
         $val = $dir_sums[$dirnum][2]/$num_w;
+        print_val();
+
+        printf("\n%-20s\t", "AMEAN INSTRUCTION");
+        $val = $dir_sums[$dirnum][3]/$num_w;
+        print_val();
+        printf("\n%-20s\t", "AMEAN TRACES NB");
+        $val = $dir_sums[$dirnum][4]/$num_w;
+        print_val();
+        printf("\n%-20s\t", "AMEAN FAILS");
+        $val = $dir_sums[$dirnum][5]/$num_w;
         print_val();
 
     }
