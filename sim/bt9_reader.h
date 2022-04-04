@@ -31,8 +31,6 @@
 
 #include "bt9.h"
 
-#define N 0
-
 namespace bt9
 {
 
@@ -392,17 +390,6 @@ namespace bt9
                     ++edge_it;
                 }
 
-                //tempo
-                int i = 0;
-                while (i < N) {
-                    i ++;
-                    if ( i > N)
-                        break;
-                }
-                if (i > N)
-                    return 0;
-
-
                 if (cond_path == -2)
                 {
                     // no branch found -> broken path
@@ -410,19 +397,24 @@ namespace bt9
                 }
                 // int count_edge = 1;
                 // path to the next conditional br
-                conditional = this->operator->()->brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
-                direct = this->operator->()->brClass().directness == BrClass::Directness::DIRECT;
+                conditional = this->operator*().brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
+                direct = this->operator*().brClass().directness == BrClass::Directness::DIRECT;
                 bool found = false;
                 while (!conditional && direct)
                 {
                     // search for edge to take
-                    edgelist = bt9_reader_->edge_hash_table.find(this->operator->()->brVirtualAddr())->second;
+                    edgelist = bt9_reader_->edge_hash_table.find(this->operator*().brVirtualAddr())->second;
                     edge_it = edgelist.begin();
                     while (edge_it != edgelist.end())
                     {
                         if (edge_it->srcNodeIndex() == index_)
                         {
-                            // direct and unconditional by outter while condition
+                            if (edge_it->destNodeIndex() == index_){
+                                //cycle because unconditional and direct by the outter while condition
+                                edge_it++;
+                                continue;
+                            } 
+                            // direct and unconditional by the outter while condition
                             index_ = edge_it->destNodeIndex();
                             path_instr_count += edge_it->nonBrInstCnt() + 1;
                             found = true;
@@ -432,12 +424,11 @@ namespace bt9
                         ++edge_it;
                     }
 
-
                     if (!found)
                         break; // end of the program
 
-                    conditional = this->operator->()->brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
-                    direct = this->operator->()->brClass().directness == BrClass::Directness::DIRECT;
+                    conditional = this->operator*().brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
+                    direct = this->operator*().brClass().directness == BrClass::Directness::DIRECT;
                 }
                 // printf("%d\n", count_edge);
                 return cond_path;

@@ -6,8 +6,8 @@
 
 require ( "./bench_list.pl");
 
-$statsize  = 6;
-my @stat   = ("MISPRED_PER_1K_INST", "MEAN_TRACE_PRECISION", "MEAN_TRACE_USAGE", "MEAN_TRACE_INSTRUCTION", "TRACE_NUMBER", "CONSTRUCTION_FAILS");
+$statsize  = 7;
+my @stat   = ("MISPRED_PER_1K_INST", "MEAN_TRACE_PRECISION", "MEAN_TRACE_USAGE", "MEAN_TRACE_INSTRUCTION", "TRACE_NUMBER", "CONSTRUCTION_FAILS", "UNUSED_TRACE_PER");
 # $statscnd  = "MEAN_TRACE_PRECISION";
 # $statthrd  = "MEAN_TRACE_USAGE";
 $wsuite    = "all";
@@ -240,6 +240,9 @@ sub print_amean{
         print_val();
         printf("\n%-20s\t", "AMEAN FAILS");
         $val = $dir_sums[$dirnum][5]/$num_w;
+        print_val();
+        printf("\n%-20s\t", "UNUSED TRACE PERCENT");
+        $val = $dir_sums[$dirnum][6]/$num_w;
         print_val();
 
     }

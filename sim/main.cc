@@ -48,7 +48,7 @@ typedef struct trace_descr
   // uint32_t nb_instr_tot = 0;
   uint16_t length = 0;
   bool pred[TRACE_LENGTH] = {0};
-  // uint32_t count_use = 0;
+  uint32_t count_use = 0;
 } trace_t;
 
 /////////////////////////////////////////////////////////////////
@@ -521,7 +521,7 @@ int main(int argc, char *argv[])
 #endif
 #ifdef TRACE_LENGTH
         // HOTSPOT TRACE PREDICTION STAT ///////////////////////////////////////////////////
-    printf(" %10lld\t%6ld\r", numIter, global_nb_trace - global_trace_evicted);
+    // printf(" %10lld\t%6ld\r", numIter, global_nb_trace - global_trace_evicted);
 
         if (current_trace != nullptr)
         {
@@ -685,8 +685,10 @@ int main(int argc, char *argv[])
               if (evict_id == ((unsigned long)key | (unsigned long)evict_tag << HOTSPOT_KEY_SIZE) &&
                   (current_trace == nullptr || evict_id != current_trace->trace_id))
               {
+                if (evict_it->count_use == 0) global_nb_unused_trace ++;
                 evict_it = trace_pred[key].erase(evict_it);
                 global_trace_evicted++;
+                
               }
               else
               {
@@ -722,6 +724,7 @@ int main(int argc, char *argv[])
                   // if (current_trace->count_use +1 != 0) //saturation
                   //   current_trace->count_use++;
                   global_trace_use ++;
+                  current_trace->count_use ++;
                 }
 
                 no_pred_from_here = false;
@@ -888,9 +891,10 @@ int main(int argc, char *argv[])
   while (traces != trace_pred.end())
   {
 
-    // for (auto it_trace = traces->second.begin(); it_trace != traces->second.end(); it_trace++) {
-
-    // }
+    for (auto it_trace = traces->second.begin(); it_trace != traces->second.end(); it_trace++) {
+      if(it_trace->count_use == 0)
+        global_nb_unused_trace ++;
+    }
 
     
 #ifdef PRINT_TRACES
@@ -932,7 +936,7 @@ int main(int argc, char *argv[])
     printf("  MEAN_TRACE_INSTRUCTION      \t : %10.6f\n", instr_display);
     printf("  MEAN_TRACE_PRECISION        \t : %10.6f\n", prec_display);
     printf("  MEAN_TRACE_USAGE            \t : %10.6f\n", (double)trace_instruction_counter / (double)total_instruction_counter);
-    // printf("  UNUSED_TRACE_PER            \t : %10.6f\n", 100 * (double)unused_trace / (double)(global_nb_trace)); certainly broken due to eviction
+    printf("  UNUSED_TRACE_PER            \t : %10.6f\n", 100 * (double)global_nb_unused_trace / (double)(global_nb_trace)); 
   }
 #endif
 
