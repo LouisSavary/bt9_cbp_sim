@@ -183,7 +183,7 @@ sub print_stats{
         printf("\n%-20s\t", $wstring);
 
         for($dirnum=0; $dirnum < @dirs ; $dirnum++){
-            for ($iii = 0; $iii < 1+2; $iii++){
+            for ($iii = 0; $iii < $statsize; $iii++){
                 $val     = $data[$dirnum][$ii][$iii];
                 print_val();
             }
@@ -216,7 +216,7 @@ sub print_amean{
 	    for($statnum=0; $statnum < $statsize; $statnum++ ){
             $dir_sums[$dirnum][$statnum]=0;
             for($ii=0; $ii< $num_w; $ii++){
-                $dir_sums[$dirnum][$statnum] += $data[$dirnum][$ii][$statnum];
+                $dir_sums[$dirnum][$statnum] += $data[$dirnum][$ii][$statnum] if !($data[$dirnum][$ii][$statnum] eq 'nan');
             }
         }
         

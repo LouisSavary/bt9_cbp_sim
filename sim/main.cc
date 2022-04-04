@@ -936,15 +936,21 @@ int main(int argc, char *argv[])
   //   printf(" %8ld", nb_early_exit[i]);
   // }
   // printf("\n");
+  double prec_display = 0.0;
+  double instr_display = 0.0;
+  if (nbtrace > 0){
+    prec_display = (double)(prec_sum) / (double)(nbtrace);
+    instr_display = (double)(instr_sum) / (double)(nbtrace);
+  } 
+
   printf("  TRACE_NUMBER                \t : %10d\n", (nbtrace));
   printf("  CONSTRUCTION_FAILS          \t : %10d\n", count_fail);
-
   if (!trace_pred.empty())
   {
-    printf("  MEAN_TRACE_INSTRUCTION      \t : %10.6f\n", (double)(instr_sum) / (double)(nbtrace));
-    printf("  MEAN_TRACE_PRECISION        \t : %10.6f\n", (double)(prec_sum) / (double)(nbtrace));
+    printf("  MEAN_TRACE_INSTRUCTION      \t : %10.6f\n", instr_display);
+    printf("  MEAN_TRACE_PRECISION        \t : %10.6f\n", prec_display);
     printf("  MEAN_TRACE_USAGE            \t : %10.6f\n", (double)trace_instruction_counter / (double)total_instruction_counter);
-    printf("  UNUSED_TRACE_PER            \t : %10.6f\n", 100 * (double)unused_trace / (double)(nbtrace));
+    // printf("  UNUSED_TRACE_PER            \t : %10.6f\n", 100 * (double)unused_trace / (double)(nbtrace)); certainly broken due to eviction
   }
 #endif
 
