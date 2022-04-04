@@ -43,12 +43,12 @@ typedef struct trace_descr
   // uint32_t block_length[TRACE_LENGTH] = {0};
   // uint64_t nb_early_exit[TRACE_LENGTH] = {0};
   uint64_t trace_id = 0;
-  double precision = 0.0;
+  // double precision = 0.0;
   float confidence = 1.0;
-  uint32_t nb_instr_tot = 0;
+  // uint32_t nb_instr_tot = 0;
   uint16_t length = 0;
   bool pred[TRACE_LENGTH] = {0};
-  uint32_t count_use = 0;
+  // uint32_t count_use = 0;
 } trace_t;
 
 /////////////////////////////////////////////////////////////////
@@ -290,6 +290,14 @@ int main(int argc, char *argv[])
   bool branchTaken;
   UINT64 branchTarget;
   UINT64 numIter = 0;
+
+  uint64_t global_trace_instr_nb = 0;
+  uint64_t global_nb_trace = 0;
+  uint64_t global_nb_unused_trace = 0;
+  uint64_t global_trace_precision = 0;
+  uint64_t global_trace_use = 0;
+  uint64_t global_trace_evicted = 0;
+
   long long unsigned int trace_instruction_counter = 0;
   trace_t *current_trace = nullptr;
   short unsigned int current_trace_it = 0;
@@ -304,7 +312,6 @@ int main(int argc, char *argv[])
     //     jauge[i] = '#';
     //   else jauge[i] = ' ';
     // printf("\tproceeds \t : (%s) %10lld\t%6ld\r", jauge, numIter, trace_pred.size());
-    // printf(" %10lld\t%6ld\r", numIter, trace_pred.size());
 
     try
     {
@@ -514,6 +521,7 @@ int main(int argc, char *argv[])
 #endif
 #ifdef TRACE_LENGTH
         // HOTSPOT TRACE PREDICTION STAT ///////////////////////////////////////////////////
+    printf(" %10lld\t%6ld\r", numIter, global_nb_trace - global_trace_evicted);
 
         if (current_trace != nullptr)
         {
@@ -536,7 +544,7 @@ int main(int argc, char *argv[])
             trace_instruction_counter += it->getEdge()->nonBrInstCnt() +1;
             if (current_trace_it >= current_trace->length)
             {
-              current_trace->precision += 1;
+              global_trace_precision += 1;
               current_trace = nullptr;
               current_trace_it = 0;
             }
@@ -678,6 +686,7 @@ int main(int argc, char *argv[])
                   (current_trace == nullptr || evict_id != current_trace->trace_id))
               {
                 evict_it = trace_pred[key].erase(evict_it);
+                global_trace_evicted++;
               }
               else
               {
@@ -710,8 +719,9 @@ int main(int argc, char *argv[])
                   // branch into the trace
                   current_trace = &*it_test;
                   current_trace_it = 0;
-                  if (current_trace->count_use +1 != 0) //saturation
-                    current_trace->count_use++;
+                  // if (current_trace->count_use +1 != 0) //saturation
+                  //   current_trace->count_use++;
+                  global_trace_use ++;
                 }
 
                 no_pred_from_here = false;
@@ -729,6 +739,7 @@ int main(int argc, char *argv[])
               // unique if the br instrs measure more than a byte
 
               bool useful = true;
+              uint64_t trace_length_instr = 0;
 
               bool prepred_dir = branchTaken;
               bt9::BT9Reader::NodeTableIterator node_it = bt9_reader.node_table.begin();
@@ -749,13 +760,7 @@ int main(int argc, char *argv[])
                 if (next_edge < 0)
                 { // program's end or indirect path
                   // therefore unpredictible
-                  if (new_trace.nb_instr_tot < TRACE_INST_LENG_THRES)
-                  {
-                    useful = false;
-                    count_fail++;
-                    hotspotness[key][way] /= 2;
-                  } // if trace is long enough, it is kept
-
+                  
                   // cannot go any further
                   break; // stops construction
                 }
@@ -765,7 +770,7 @@ int main(int argc, char *argv[])
                 new_trace.pred[i] = prepred_dir;
                 // new_trace.block_length[i] = node_it.getPathInstrucCount();
                 // new_trace.nb_instr_tot += new_trace.block_length[i];
-                new_trace.nb_instr_tot = node_it.getPathInstrucCount();
+                trace_length_instr += node_it.getPathInstrucCount();
                 new_trace.length = i + 1;
 
                 if (i < TRACE_LENGTH - 1)
@@ -775,11 +780,12 @@ int main(int argc, char *argv[])
                 }
               }
 
-              if (useful && new_trace.confidence >= TRACE_CONF_THRES)
-              {
+              if (trace_length_instr >= TRACE_INST_LENG_THRES && new_trace.confidence >= TRACE_CONF_THRES)
+              { // add length contraint (not only for short preds traces l752)
 
                 trace_pred[key].push_back(new_trace);
-
+                global_trace_instr_nb += trace_length_instr;
+                global_nb_trace ++;
                 // branch immediatly in it (if able) or consider a schedule time
               }
             } // END TRACE CONSTRUCTION ///////////////////////////////////////////////////////////
@@ -875,38 +881,18 @@ int main(int argc, char *argv[])
   printf("\n");
 
 #ifdef TRACE_LENGTH
-  uint32_t instr_sum = 0;
-  double prec_sum = 0;
-  // uint64_t nb_early_exit[TRACE_LENGTH] = {0}; // [0] -> nb prediction
 
   unordered_map<hotspot_t, list<trace_t>>::iterator traces = trace_pred.begin();
   // long long unsigned int trace_instr_exec = 0;
-  unsigned int unused_trace = 0;
-  unsigned int nbtrace = 0;
+
   while (traces != trace_pred.end())
   {
 
-    for (auto it_trace = traces->second.begin(); it_trace != traces->second.end(); it_trace++) {
-      nbtrace ++;
-      instr_sum += it_trace->nb_instr_tot;
+    // for (auto it_trace = traces->second.begin(); it_trace != traces->second.end(); it_trace++) {
 
-      double prec = 0;
-      if (it_trace->count_use > 0)
-        prec = (it_trace->precision) / (double)(it_trace->count_use);
-      prec_sum += prec;
-
-    }
-    // printf("    TRACE %16lx ", it_trace->trace_id);
-    // int factor = it_trace->count_use;
-    // unused_trace += (it_trace->count_use == 0);
-
-    // for (int i = 0; i < it_trace->length; i++)
-    // {
-    //   // factor -= it_trace->nb_early_exit[i];
-    //   // trace_instr_exec += factor * it_trace->block_length[i];
-    //   nb_early_exit[i] += it_trace->nb_early_exit[i];
     // }
 
+    
 #ifdef PRINT_TRACES
     printf("    TRACE ");
     for (int i = 0; i < it_trace->length; i++)
@@ -930,27 +916,23 @@ int main(int argc, char *argv[])
 
     traces++;
   }
-  // printf("NB_EARLY_EXIT :");
-  // for (int i = 0; i < TRACE_LENGTH; i++)
-  // {
-  //   printf(" %8ld", nb_early_exit[i]);
-  // }
-  // printf("\n");
+
   double prec_display = 0.0;
   double instr_display = 0.0;
-  if (nbtrace > 0){
-    prec_display = (double)(prec_sum) / (double)(nbtrace);
-    instr_display = (double)(instr_sum) / (double)(nbtrace);
+
+  if (global_nb_trace > 0){ // yep, just in case ...
+    prec_display = (double)(global_trace_precision) / (double)(global_trace_use*global_nb_trace);
+    instr_display = (double)(global_trace_instr_nb) / (double)(global_nb_trace);
   } 
 
-  printf("  TRACE_NUMBER                \t : %10d\n", (nbtrace));
+  printf("  TRACE_NUMBER                \t : %10ld\n", (global_nb_trace));
   printf("  CONSTRUCTION_FAILS          \t : %10d\n", count_fail);
   if (!trace_pred.empty())
   {
     printf("  MEAN_TRACE_INSTRUCTION      \t : %10.6f\n", instr_display);
     printf("  MEAN_TRACE_PRECISION        \t : %10.6f\n", prec_display);
     printf("  MEAN_TRACE_USAGE            \t : %10.6f\n", (double)trace_instruction_counter / (double)total_instruction_counter);
-    // printf("  UNUSED_TRACE_PER            \t : %10.6f\n", 100 * (double)unused_trace / (double)(nbtrace)); certainly broken due to eviction
+    // printf("  UNUSED_TRACE_PER            \t : %10.6f\n", 100 * (double)unused_trace / (double)(global_nb_trace)); certainly broken due to eviction
   }
 #endif
 
