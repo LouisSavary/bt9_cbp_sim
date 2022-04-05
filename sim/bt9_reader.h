@@ -395,7 +395,7 @@ namespace bt9
                     // no branch found -> broken path
                     return -2;
                 }
-                // int count_edge = 1;
+                
                 // path to the next conditional br
                 conditional = this->operator*().brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
                 direct = this->operator*().brClass().directness == BrClass::Directness::DIRECT;
@@ -411,7 +411,7 @@ namespace bt9
                         {
                             if (edge_it->destNodeIndex() == index_){
                                 //cycle because unconditional and direct by the outter while condition
-                                edge_it++;
+                                ++edge_it;
                                 continue;
                             } 
                             // direct and unconditional by the outter while condition
