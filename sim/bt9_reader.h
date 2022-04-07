@@ -1511,6 +1511,9 @@ namespace bt9
                 exit(-1);
             }
 
+            double recouv_coef = 0.0;
+            uint64_t nb_edge = 0;
+
             uint32_t max_id = 0;
             while (std::getline(pinfile_, line, '\n'))
             {
@@ -1545,6 +1548,10 @@ namespace bt9
                     parseEdgeRecordOptionalFields_(edge_record, ss, token);
                     updateEdgeTable_(edge_record);
 
+                    long unsigned den = abs((long)(edge_record.nonBrInstCnt() - edge_record.observedTraverseCnt()));
+                    if (den <1) den = 1;
+                    recouv_coef += (double)(edge_record.nonBrInstCnt() * edge_record.observedTraverseCnt())/(double)den;
+                    nb_edge++;
                     max_id = std::max(max_id, edge_record.id_);
                 }
                 else
@@ -1553,7 +1560,7 @@ namespace bt9
                     exit(-1);
                 }
             }
-
+            printf("OVERLAP_COEF \t: %16.4lf\n", recouv_coef/((double)nb_edge));
             // Update edge order vector
             updateEdgeOrderVector_(++max_id);
         }
