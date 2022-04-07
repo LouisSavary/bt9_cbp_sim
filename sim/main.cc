@@ -31,7 +31,7 @@ typedef uint16_t hotspot_t;
 #define GHR_LENGTH 6
 
 // #define PRINT_HOTSPOT
-#define PRINT_TRACES
+// #define PRINT_TRACES
 #define PREDICT_TRACE
 #define TRACE_LENGTH 6
 #define TRACE_PRED_TRIG_THRES 128
