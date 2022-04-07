@@ -523,7 +523,7 @@ int main(int argc, char *argv[])
             // current_trace->nb_early_exit[current_trace_it]++;
 
             // update trace
-            current_trace->confidence /= (double)(1<<((current_trace_it+1)/2));
+            current_trace->confidence *= 1.0 - 1.0/(double)(1<<(current_trace_it/2+1));
 
             if (current_trace->confidence < TRACE_CONF_EVICT) {  //evict : not relevant ?
               uint64_t key = (current_trace->trace_id >> HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE);

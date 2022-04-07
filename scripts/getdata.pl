@@ -244,6 +244,9 @@ sub print_amean{
         printf("\n%-20s\t", "UNUSED TRACE PERCENT");
         $val = $dir_sums[$dirnum][6]/$num_w;
         print_val();
+        printf("\n%-20s\t", "OVERLAP");
+        $val = $dir_sums[$dirnum][7]/$num_w;
+        print_val();
 
     }
 
