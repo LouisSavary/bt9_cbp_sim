@@ -19,6 +19,7 @@
 #include <limits>
 #include <string>
 #include <map>
+#include <list>
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
@@ -370,7 +371,7 @@ namespace bt9
                     return -2;
 
                 // else  find a conditional branch that starts from node
-                list<BT9ReaderEdgeRecord> edgelist = bt9_reader_->edge_hash_table.find(node.brVirtualAddr())->second;
+                std::list<BT9ReaderEdgeRecord> edgelist = bt9_reader_->edge_hash_table.find(node.brVirtualAddr())->second;
                 std::list<BT9ReaderEdgeRecord>::const_iterator edge_it = edgelist.begin();
                 std::list<BT9ReaderEdgeRecord>::const_iterator edge_end = edgelist.end();
 

@@ -263,6 +263,8 @@ int main(int argc, char *argv[])
   hotspot_t hotspot_tag[(uint64_t)1 << HOTSPOT_KEY_SIZE][HOTSPOT_ASSOCIATIVITY];
 
   unordered_map<hotspot_t, list<trace_t>> trace_pred(0);
+  int count_fail_conf = 0;
+  int count_fail_size = 0;
   int count_fail = 0;
   uint32_t GHR = 0;
 
@@ -288,12 +290,13 @@ int main(int argc, char *argv[])
   bt9_reader.header.getFieldValueStr(key, value);
   UINT64 branch_instruction_counter = std::stoull(value, nullptr, 0);
   UINT64 numMispred = 0;
-
+  
   // ver2    UINT64     numMispred_btbMISS =0;
   // ver2    UINT64     numMispred_btbANSF =0;
   // ver2    UINT64     numMispred_btbATSF =0;
   // ver2    UINT64     numMispred_btbDYN =0;
 
+  UINT64 total_instruction_counter_bis = 0;
   UINT64 cond_branch_instruction_counter = 0;
   // ver2     UINT64 btb_ansf_cond_branch_instruction_counter=0;
   // ver2     UINT64 btb_atsf_cond_branch_instruction_counter=0;
@@ -328,7 +331,7 @@ int main(int argc, char *argv[])
   uint64_t global_nb_unused_trace = 0;
   uint64_t global_trace_precision = 0;
   uint64_t global_trace_evicted = 0;
-
+  uint64_t hotspot_eviction = 0;
   
 
   long long unsigned int trace_instruction_counter = 0;
@@ -454,7 +457,7 @@ int main(int argc, char *argv[])
 
       branchTaken = it->getEdge()->isTakenPath();
       branchTarget = it->getEdge()->brVirtualTarget();
-
+      total_instruction_counter_bis += it->getEdge()->nonBrInstCnt();
       // printf("PC: %llx type: %x T %d N %d outcome: %d", PC, (UINT32)opType, it->getSrcNode()->brObservedTakenCnt(), it->getSrcNode()->brObservedNotTakenCnt(), branchTaken);
 
       /************************************************************************************************************/
@@ -538,7 +541,7 @@ int main(int argc, char *argv[])
           else
           {
             current_trace_it++;
-            trace_instruction_counter += it->getEdge()->nonBrInstCnt() +1;
+            trace_instruction_counter += it->getEdge()->nonBrInstCnt();
             if (current_trace_it >= current_trace->length)
             {
               global_trace_precision += 1;
@@ -661,6 +664,7 @@ int main(int argc, char *argv[])
             //   }
             // }
 
+            hotspot_eviction ++;
             // evict selected way
             hotspotness[key][evict_way] = 1;
             hotspot_tag[key][evict_way] = tag;
@@ -677,11 +681,9 @@ int main(int argc, char *argv[])
           if (it_test->trace_id == targetID)
           {
 
-            // branch into the trace
+            // BRANCH INTO THE TRACE
             current_trace = &*it_test;
             current_trace_it = 0;
-            // if (current_trace->count_use +1 != 0) //saturation
-            //   current_trace->count_use++;
             global_trace_use ++;
             current_trace->count_use ++;
 
@@ -696,9 +698,7 @@ int main(int argc, char *argv[])
         {
           // TRACE CONSTRUCTION ///////////////////////////////////////////////////////////////
           trace_t new_trace;
-          // new_trace.trace_id = branchTarget; // need pc here instead of target
           new_trace.trace_id = targetID; 
-          // unique if the br instrs measure more than a byte
 
           bool useful = true;
           uint64_t trace_length_instr = 0;
@@ -712,7 +712,7 @@ int main(int argc, char *argv[])
 
           snd_pred = brpred;
           snd_pred.UpdatePredictor(PC, predDir, branchTaken, 0);
-          // take true information as if the parediction was made after branching
+          // take true information as if the prediction is made after branching
 
           for (int i = 0; i < TRACE_LENGTH; i++)
           {
@@ -742,15 +742,17 @@ int main(int argc, char *argv[])
             }
           }
 
-          if (trace_length_instr >= TRACE_INST_LENG_THRES && new_trace.confidence >= TRACE_CONF_THRES)
+          // if (trace_length_instr >= TRACE_INST_LENG_THRES && new_trace.confidence >= TRACE_CONF_THRES)
+          if (new_trace.confidence >= TRACE_CONF_THRES)
           { // add length contraint (not only for short preds traces l752)
 
             trace_pred[trace_key].push_back(new_trace);
             global_trace_instr_nb += trace_length_instr;
             global_nb_trace ++;
             // branch immediatly in it (if able) or consider a schedule time
-          } 
-          else count_fail ++;
+          } else count_fail++;
+          if (trace_length_instr < TRACE_INST_LENG_THRES) count_fail_size ++;
+          if (new_trace.confidence < TRACE_CONF_THRES) count_fail_conf ++;
           // END TRACE CONSTRUCTION ///////////////////////////////////////////////////////////
         }
 #endif
@@ -807,7 +809,7 @@ int main(int argc, char *argv[])
   }
 #endif
   printf("  TRACE \t : %s", trace_path.c_str());
-  printf("  NUM_INSTRUCTIONS            \t : %10llu\n", total_instruction_counter);
+  printf("  NUM_INSTRUCTIONS            \t : %10llu (%10llu)\n", total_instruction_counter, total_instruction_counter_bis);
   printf("  NUM_BR                      \t : %10llu\n", branch_instruction_counter - 1); // JD2_2_2016 NOTE there is a dummy branch at the beginning of the trace...
   printf("  NUM_UNCOND_BR               \t : %10llu\n", uncond_branch_instruction_counter);
   printf("  NUM_CONDITIONAL_BR          \t : %10llu\n", cond_branch_instruction_counter);
@@ -878,11 +880,14 @@ int main(int argc, char *argv[])
 
   printf("  TRACE_NUMBER                \t : %10ld\n", (global_nb_trace));
   printf("  CONSTRUCTION_FAILS          \t : %10d\n", count_fail);
+  printf("  CONSTRUCTION_FAILS_CONF     \t : %10d\n", count_fail_conf);
+  printf("  CONSTRUCTION_FAILS_SIZE     \t : %10d\n", count_fail_size);
+  printf("  HOTSPOT_EVICTION            \t : %10ld\n", hotspot_eviction);
   if (!trace_pred.empty())
   {
     printf("  MEAN_TRACE_INSTRUCTION      \t : %10.2f\n", instr_display);
     printf("  MEAN_TRACE_PRECISION        \t : %10.6f\n", prec_display);
-    printf("  MEAN_TRACE_USAGE            \t : %10.6f\n", (double)trace_instruction_counter / (double)total_instruction_counter);
+    printf("  MEAN_TRACE_USAGE            \t : %10.6f\n", (double)trace_instruction_counter / (double)total_instruction_counter_bis);
     printf("  UNUSED_TRACE_PER            \t : %10.6f\n", 100 * (double)global_nb_unused_trace / (double)(global_nb_trace)); 
   }
 #endif
