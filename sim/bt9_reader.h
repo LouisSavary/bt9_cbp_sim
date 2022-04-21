@@ -1549,9 +1549,7 @@ namespace bt9
                     parseEdgeRecordOptionalFields_(edge_record, ss, token);
                     updateEdgeTable_(edge_record);
 
-                    long unsigned den = abs((long)(edge_record.nonBrInstCnt() - edge_record.observedTraverseCnt()));
-                    if (den <1) den = 1;
-                    recouv_coef += (double)(edge_record.nonBrInstCnt() * edge_record.observedTraverseCnt())/(double)den;
+                    recouv_coef += (double)(edge_record.nonBrInstCnt() * edge_record.observedTraverseCnt());
                     nb_edge++;
                     max_id = std::max(max_id, edge_record.id_);
                 }

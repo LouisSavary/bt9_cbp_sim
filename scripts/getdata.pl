@@ -201,8 +201,8 @@ sub print_val{
 	printf("%12.3f \t", $val);  
     }
     else { 
-	printf("xxxxxxxxxxx \t") unless($noxxxx); 
-	printf("0           \t") if($noxxxx); 
+	printf("xxxxxxxxxxxx \t") unless($noxxxx); 
+	printf("0            \t") if($noxxxx); 
     }
 }
 
