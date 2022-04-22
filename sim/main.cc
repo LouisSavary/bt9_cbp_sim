@@ -37,9 +37,9 @@ typedef uint16_t hotspot_t;
 #define TRACE_LENGTH 6
 #define TRACE_PRED_TRIG_THRES 128
 #define TRACE_INST_LENG_THRES 32
-#define TRACE_INST_LENG_MAX 1024
+#define TRACE_INST_LENG_MAX 512
 #define TRACE_CONF_THRES 0.6
-#define TRACE_CONF_EVICT 0.1
+#define TRACE_CONF_EVICT 0.05
 
 #define TRACE_CACHE_SIZE 3 // because we only have three address between two instruction addresses
 
@@ -52,17 +52,17 @@ typedef struct
   // uint64_t trace_id = 0;
   // double precision = 0.0;
   float confidence = 0.0;
-  uint16_t length = 0;
+  uint8_t length = 0;
   uint32_t pred;
   uint32_t count_use = 0;
 
 } trace_t;
 
-bool getpred(trace_t trace, int i)
+bool getpred(uint32_t trace, int i)
 {
-  if (i >= trace.length)
+  if (i >= 32)
     return false;
-  return (trace.pred >> i) & 1;
+  return (trace >> i) & 1;
 }
 
 bool operator==(const trace_t &lhs, const trace_t &rhs)
@@ -247,7 +247,7 @@ uint64_t traceID(uint64_t PC, uint32_t GHR)
 
 uint32_t updateGHR(uint32_t GHR, bool taken)
 {
-  return ((GHR << 1) | taken) & mask32(GHR_LENGTH + TRACE_LENGTH);
+  return ((GHR >> 1) | taken << 31); //& mask32(GHR_LENGTH + TRACE_LENGTH);
 }
 
 int main(int argc, char *argv[])
@@ -282,7 +282,6 @@ int main(int argc, char *argv[])
   int count_fail_size = 0;
   int count_fail_already_here = 0;
   int count_fail = 0;
-  uint32_t GHR = 0;
 
   for (long unsigned int i = 0; i < (uint64_t)1 << HOTSPOT_KEY_SIZE; i++)
   {
@@ -353,6 +352,29 @@ int main(int argc, char *argv[])
   trace_t *current_trace = nullptr;
   short unsigned int current_trace_it = 0;
 
+  // // initialize the future reader
+  uint32_t future_cond_br = 0;
+  int future_length = 0;
+  bt9::BT9Reader future_reader(trace_path);
+  bt9::BT9Reader::BranchInstanceIterator future_it = future_reader.begin();
+  // while (future_length < 32)
+  // {
+  //   while (future_it != future_reader.end() && future_it->getSrcNode()->brClass().conditionality != bt9::BrClass::Conditionality::CONDITIONAL)
+  //   {
+  //     future_it++;
+  //   }
+
+  //   // should not happen
+  //   if (future_it == future_reader.end())
+  //     break;
+  //   // will not cause problem as there is not enough cond_br to trigger a trace construction
+
+  //   updateGHR(future_cond_br, future_it->getEdge()->isTakenPath());
+  //   future_length++;
+  //   future_it++;
+  // }
+
+  // MAIN LOOP
   for (auto it = bt9_reader.begin(); it != bt9_reader.end(); ++it)
   {
     CheckHeartBeat(++numIter, numMispred); // Here numIter will be equal to number of branches read
@@ -491,13 +513,19 @@ int main(int argc, char *argv[])
 
 #ifdef TRACE_LENGTH
         // HOTSPOT TRACE PREDICTION STAT ///////////////////////////////////////////////////
-        // printf(" %10lld\t%6ld\t%1u\r", numIter, global_nb_trace - global_trace_evicted, GHR);
+        // if (future_length > 0 && branchTaken == getpred(future_cond_br, 32 - future_length))
+        // {
+        //   std::bitset<32> x(future_cond_br);
+
+        //   std::cout << "it and future desynch " << numIter << " " << x << " " << future_length << '\n';
+        //   exit(-1);
+        // }
 
         if (current_trace != nullptr)
         {
           // if mispred -> quit trace
 
-          bool trace_br = getpred(*current_trace, current_trace_it);
+          bool trace_br = getpred(current_trace->pred, current_trace_it);
           bool is_taken = it->getEdge()->isTakenPath();
           if (trace_br != is_taken)
           {
@@ -520,8 +548,8 @@ int main(int argc, char *argv[])
           else
           {
             // trace_instruction_counter += current_trace->block_length[current_trace_it];
-            current_trace->confidence += max(1.0f, current_trace->confidence * (1 + 1 / (1 << current_trace_it)));
-            global_trace_precision += ((double)current_trace->block_length[current_trace_it])/(double)current_trace->nb_instr_tot;
+            current_trace->confidence = min(1.0f, current_trace->confidence * (1.0f + 1.0f / (float)(1 << current_trace_it)));
+            global_trace_precision += ((double)current_trace->block_length[current_trace_it]) / (double)current_trace->nb_instr_tot;
             current_trace_it++;
             if (current_trace_it >= current_trace->length)
             {
@@ -533,35 +561,6 @@ int main(int argc, char *argv[])
 #endif
 
         // CONSTRUCT THE GOOD TRACE PREDICTION /////////////////////////////////////////////
-        int max_length = 0;
-        for (int i = 0; i < TRACE_CACHE_SIZE; i++)
-        {
-          int length = trace_pred[PC][i].length;
-          if (length > max_length)
-            max_length = length;
-        }
-        // read the future //////
-        bt9::BT9Reader::BranchInstanceIterator it_br = it;
-        list<bool> future_cond;
-        int future_length = max_length;
-
-        future_cond.push_back(it_br->getEdge()->isTakenPath());
-        it_br++;
-        for (int i = 0; i < future_length && it_br != bt9_reader.end(); i++)
-        {
-          while (it_br != bt9_reader.end() && it_br->getSrcNode()->brClass().conditionality == bt9::BrClass::Conditionality::UNCONDITIONAL)
-          {
-            if (it_br->getSrcNode()->brClass().directness == bt9::BrClass::Directness::INDIRECT)
-            {
-              future_length = i + 1;
-              break;
-            }
-
-            it_br++;
-          }
-          future_cond.push_back(it_br->getEdge()->isTakenPath());
-          it_br++;
-        }
 
         // choose best pred /////
         char best_pred = 0;
@@ -574,9 +573,28 @@ int main(int argc, char *argv[])
           if (trace.confidence < TRACE_CONF_EVICT)
             continue;
 
+          // read the future //////
+          while (future_length < trace.length)
+          {
+            while (future_it != future_reader.end() && future_it->getSrcNode()->brClass().conditionality != bt9::BrClass::Conditionality::CONDITIONAL)
+            {
+              ++future_it;
+            }
+
+            if (future_it == future_reader.end())
+            {
+              future_cond_br >>= (trace.length - future_length);
+              future_length = trace.length;
+              break;
+            }
+
+            future_cond_br = updateGHR(future_cond_br, future_it->getEdge()->isTakenPath());
+            future_length++;
+            future_it++;
+          }
+
           int length = 0;
-          auto it_future = future_cond.begin();
-          while (length < future_length && getpred(trace, length) == *it_future)
+          while (length < trace.length && getpred(trace.pred, length) == getpred(future_cond_br, length + 32 - future_length))
             length++;
 
           if (length > best_length)
@@ -586,6 +604,7 @@ int main(int argc, char *argv[])
           }
         }
 
+        future_length--;
         // PREDICTION //////////////////////////////////////////////////////////////////////
         bool predDir = false;
 
@@ -639,9 +658,7 @@ int main(int argc, char *argv[])
 
         // TRACE ID /////
         uint64_t targetID = PC; // traceID(branchTarget, GHR);
-        uint32_t trace_key = (targetID >> HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE);
-
-        GHR = updateGHR(GHR, branchTaken);
+        // uint32_t trace_key = (targetID >> HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE);
 
         // find corresponding way in hotspot cache
         int way = -1;
@@ -731,7 +748,7 @@ int main(int argc, char *argv[])
           snd_pred = brpred; // copy_ctor
           // snd_pred.UpdatePredictor(PC, predDir, branchTaken, 0);
           // take true information as if the prediction is made after branching
-          
+
           int i = 0;
           while (new_trace.confidence > TRACE_CONF_THRES)
           {
@@ -756,6 +773,8 @@ int main(int argc, char *argv[])
             snd_pred.UpdatePredictor(pc_pred, prepred_dir, prepred_dir, 0);
             pc_pred = node_it->brVirtualAddr();
             i++;
+            if (i == 32)
+              break;
           }
 
           // if (trace_length_instr >= TRACE_INST_LENG_THRES && new_trace.confidence >= TRACE_CONF_THRES)
@@ -812,10 +831,8 @@ int main(int argc, char *argv[])
         exit(-1); // this should never happen, if it does please email CBP org chair.
       }
 
-      if (current_trace != nullptr){
-        trace_instruction_counter += it->getEdge()->nonBrInstCnt() + 1;
-      }
-      
+      trace_instruction_counter += (it->getEdge()->nonBrInstCnt() + 1) * (current_trace != nullptr);
+
       /************************************************************************************************************/
     }
     catch (const std::out_of_range &ex)
