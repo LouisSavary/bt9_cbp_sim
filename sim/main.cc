@@ -39,7 +39,7 @@ typedef uint16_t hotspot_t;
 #define TRACE_INST_LENG_THRES 32
 #define TRACE_INST_LENG_MAX 512
 #define TRACE_CONF_THRES 0.6
-#define TRACE_CONF_EVICT 0.05
+#define TRACE_CONF_EVICT 0.1
 
 #define TRACE_CACHE_SIZE 3 // because we only have three address between two instruction addresses
 
@@ -623,19 +623,21 @@ int main(int argc, char *argv[])
           float conf = brpred.getConfidence();
           brpred.UpdatePredictor(PC, best_pred == i, predDir_bis, branchTarget);
           numMispredTrace += predDir_bis && (best_pred != i);
-          if (predDir_bis && confidence < conf)
+          if (predDir_bis && conf > confidence)
           {
             branch_to = i; // hope for only one, other wise the last will be taken
             confidence = conf;
           }
         }
 
+        // BRANCH INTO TRACE ////////////
         if (current_trace == nullptr && branch_to > 0)
         { // not in a trace and predict to jump in trace (correct to the future)
           current_trace = &(trace_pred[PC][branch_to - 1]);
           current_trace_it = 1;
           // trace_instruction_counter += current_trace->block_length[0];
           global_trace_use++;
+          trace_pred[PC][branch_to - 1].count_use ++;
         }
 
         numMispred += predDir && (best_pred != 0);
@@ -778,7 +780,7 @@ int main(int argc, char *argv[])
           }
 
           // if (trace_length_instr >= TRACE_INST_LENG_THRES && new_trace.confidence >= TRACE_CONF_THRES)
-          if (new_trace.confidence >= TRACE_CONF_THRES && trace_length_instr > TRACE_INST_LENG_THRES)
+          if (new_trace.confidence >= TRACE_CONF_THRES && trace_length_instr >= TRACE_INST_LENG_THRES)
           {
 
             bool already_here = false;
@@ -792,6 +794,7 @@ int main(int argc, char *argv[])
             }
             else
             {
+              global_nb_unused_trace += (trace_pred[targetID][trace_evict_id].confidence > 0 && trace_pred[targetID][trace_evict_id].count_use == 0);
               // insertion
               new_trace.nb_instr_tot = trace_length_instr;
               trace_pred[targetID][trace_evict_id] = new_trace;

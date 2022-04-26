@@ -6,8 +6,8 @@
 
 require ( "./bench_list.pl");
 
-$statsize  = 8;
-my @stat   = ("MISPRED_PER_1K_INST", "MEAN_TRACE_PRECISION", "MEAN_TRACE_USAGE", "MEAN_TRACE_INSTRUCTION", "TRACE_NUMBER", "CONSTRUCTION_FAILS", "UNUSED_TRACE_PER", "OVERLAP_COEF");
+$statsize  = 9;
+my @stat   = ("MISPRED_PER_1K_INST", "MEAN_TRACE_PRECISION", "MEAN_TRACE_USAGE", "MEAN_TRACE_INSTRUCTION", "TRACE_NUMBER", "CONSTRUCTION_FAILS", "UNUSED_TRACE_PER", "OVERLAP_COEF", "NUM_BR");
 # $statscnd  = "MEAN_TRACE_PRECISION";
 # $statthrd  = "MEAN_TRACE_USAGE";
 $wsuite    = "all";
@@ -176,7 +176,7 @@ sub print_header{
 
 sub print_stats{
 
-
+    printf(" %-19s %15s %15s %15s %15s %15s %15s %15s %15s %15s\n", "name", "mispred/1Kinstr", "prec", "usage", "instr_nb", "trace_nb", "fails", "unused", "overlap", "branch_nb");
     for($ii=0; $ii< $num_w; $ii++){
         $wname   = $w[$ii];
         $wstring = substr($wname, 0, 20);
@@ -202,7 +202,7 @@ sub print_val{
     }
     else { 
 	printf("xxxxxxxxxxxx \t") unless($noxxxx); 
-	printf("0            \t") if($noxxxx); 
+	printf("           0 \t") if($noxxxx); 
     }
 }
 
@@ -246,6 +246,9 @@ sub print_amean{
         print_val();
         printf("\n%-20s\t", "OVERLAP");
         $val = $dir_sums[$dirnum][7]/$num_w;
+        print_val();
+        printf("\n%-20s\t", "NUM BR");
+        $val = $dir_sums[$dirnum][8]/$num_w;
         print_val();
 
     }
