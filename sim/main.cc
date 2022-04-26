@@ -35,7 +35,7 @@ typedef uint16_t hotspot_t;
 // #define PRINT_TRACES
 #define PREDICT_TRACE
 #define TRACE_LENGTH 6
-#define TRACE_PRED_TRIG_THRES 128
+#define TRACE_PRED_TRIG_THRES 64
 #define TRACE_INST_LENG_THRES 32
 #define TRACE_INST_LENG_MAX 512
 #define TRACE_CONF_THRES 0.6
@@ -257,6 +257,41 @@ int main(int argc, char *argv[])
   {
     printf("usage: %s <trace>\n", argv[0]);
     exit(-1);
+  }
+  
+  ///////////////////////////////////////////////
+  // read environment variables
+  ///////////////////////////////////////////////
+  char* env_read;
+
+  long unsigned env_pred_trig_thres = TRACE_PRED_TRIG_THRES;
+  env_read = getenv("TRACE_PRED_TRIG_THRES");
+  if (env_read != nullptr) {
+    env_pred_trig_thres = stoul(env_read);
+  }
+
+  long unsigned env_inst_leng_thres = TRACE_INST_LENG_THRES;
+  env_read = getenv("TRACE_INST_LENG_THRES");
+  if (env_read != nullptr) {
+    env_inst_leng_thres = stoul(env_read);
+  }
+
+  long unsigned env_inst_leng_max = TRACE_INST_LENG_MAX;
+  env_read = getenv("TRACE_INST_LENG_MAX");
+  if (env_read != nullptr) {
+    env_inst_leng_max = stoul(env_read);
+  }
+
+  double env_conf_thres = TRACE_CONF_THRES;
+  env_read = getenv("TRACE_CONF_THRES");
+  if (env_read != nullptr) {
+    env_conf_thres = stod(env_read);
+  }
+
+  double env_conf_evict = TRACE_CONF_EVICT;
+  env_read = getenv("TRACE_CONF_THRES");
+  if (env_read != nullptr) {
+    env_conf_evict = stod(env_read);
   }
 
   ///////////////////////////////////////////////
@@ -570,7 +605,7 @@ int main(int argc, char *argv[])
         {
 
           trace_t trace = trace_pred[PC][i];
-          if (trace.confidence < TRACE_CONF_EVICT)
+          if (trace.confidence < env_conf_evict)
             continue;
 
           // read the future //////
@@ -616,7 +651,7 @@ int main(int argc, char *argv[])
 
         for (int i = 1; i <= TRACE_CACHE_SIZE; i++)
         {
-          if (trace_pred[PC][i - 1].confidence < TRACE_CONF_EVICT)
+          if (trace_pred[PC][i - 1].confidence < env_conf_evict)
             continue;
 
           bool predDir_bis = brpred.GetPrediction(PC + i);
@@ -718,7 +753,7 @@ int main(int argc, char *argv[])
         double min_conf = 1.0;
         for (int i = 0; i < TRACE_CACHE_SIZE; i++)
         {
-          if (trace_pred[targetID][i].confidence < TRACE_CONF_EVICT)
+          if (trace_pred[targetID][i].confidence < env_conf_evict)
           {
             room_for_a_trace = true;
             if (min_conf > trace_pred[targetID][i].confidence)
@@ -729,7 +764,7 @@ int main(int argc, char *argv[])
           }
         }
 
-        if (hotspotness[key][way] >= TRACE_PRED_TRIG_THRES && current_trace == nullptr && room_for_a_trace)
+        if (hotspotness[key][way] >= env_pred_trig_thres && current_trace == nullptr && room_for_a_trace)
         // trigger trace construction
         {
 
@@ -752,12 +787,12 @@ int main(int argc, char *argv[])
           // take true information as if the prediction is made after branching
 
           int i = 0;
-          while (new_trace.confidence > TRACE_CONF_THRES)
+          while (new_trace.confidence > env_conf_thres)
           {
             prepred_dir = snd_pred.GetPrediction(pc_pred);
             int next_edge = node_it.nextConditionalNode(prepred_dir);
 
-            if (next_edge < 0 || trace_length_instr + node_it.getPathInstrucCount() > TRACE_INST_LENG_MAX)
+            if (next_edge < 0 || trace_length_instr + node_it.getPathInstrucCount() > env_inst_leng_max)
             { // program's end or indirect path
               // therefore unpredictible
 
@@ -780,7 +815,7 @@ int main(int argc, char *argv[])
           }
 
           // if (trace_length_instr >= TRACE_INST_LENG_THRES && new_trace.confidence >= TRACE_CONF_THRES)
-          if (new_trace.confidence >= TRACE_CONF_THRES && trace_length_instr >= TRACE_INST_LENG_THRES)
+          if (new_trace.confidence >= env_conf_thres && trace_length_instr >= env_inst_leng_thres)
           {
 
             bool already_here = false;
@@ -805,9 +840,9 @@ int main(int argc, char *argv[])
           else
             count_fail++;
 
-          if (trace_length_instr < TRACE_INST_LENG_THRES)
+          if (trace_length_instr < env_inst_leng_thres)
             count_fail_size++;
-          if (new_trace.confidence < TRACE_CONF_THRES)
+          if (new_trace.confidence < env_conf_thres)
             count_fail_conf++;
           // END TRACE CONSTRUCTION ///////////////////////////////////////////////////////////
         }
