@@ -534,6 +534,73 @@ int main(int argc, char *argv[])
 
       /************************************************************************************************************/
 
+#ifdef TRACE_LENGTH
+        // HOTSPOT /////////////////////////////////////////////////////////////////////////
+
+        // | branch target                                                 |
+        // |         null         |      tag      |      key      |  null  |
+
+        hotspot_t tag = (branchTarget >> (HOTSPOT_KEY_SIZE + HOTSPOT_OFFSET)) & mask64(HOTSPOT_TAG_SIZE);
+        uint32_t key = (branchTarget >> HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE);
+
+        // TRACE ID /////
+        uint64_t targetID = PC; // traceID(branchTarget, GHR);
+        // uint32_t trace_key = (targetID >> HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE);
+
+        // find corresponding way in hotspot cache
+        int way = -1;
+        hotspot_t counter_sum = 0;
+        for (int it_way = 0; it_way < HOTSPOT_ASSOCIATIVITY; it_way++)
+        {
+          if (hotspot_tag[key][it_way] == tag)
+          {
+            way = it_way;
+            // if (hotspotness[key][it_way] + 1 != 0) // not max yet, redondant with lfu
+            hotspotness[key][it_way]++;
+          }
+          counter_sum += hotspotness[key][it_way];
+        }
+        // LFU
+        if (counter_sum / HOTSPOT_ASSOCIATIVITY > HOTSPOT_AVERAGE_MAX)
+          for (int it_way = 0; it_way < HOTSPOT_ASSOCIATIVITY; it_way++)
+            hotspotness[key][it_way] = (hotspotness[key][it_way] + 1) / 2;
+        // ceiled half
+
+        // HOTSPOT CACHE ALLOCATION (and eviction)
+        if (way == -1)
+        { // is not in cache
+          bool free_way = false;
+          for (int i = 0; i < HOTSPOT_ASSOCIATIVITY; i++)
+            if (hotspotness[key][i] == 0)
+            { // place it in this entry
+              hotspot_tag[key][i] = tag;
+              hotspotness[key][i] = 1;
+              free_way = true;
+            }
+
+          if (!free_way)
+          { // eviction
+            uint16_t min_counter = hotspotness[key][0];
+            uint16_t evict_way = 0;
+
+            for (int i = 0; i < HOTSPOT_ASSOCIATIVITY; i++)
+              if (hotspotness[key][i] < min_counter)
+              {
+                evict_way = i;
+                min_counter = hotspotness[key][i];
+              }
+
+            hotspot_eviction++;
+            // evict selected way
+            hotspotness[key][evict_way] = 1;
+            hotspot_tag[key][evict_way] = tag;
+          }
+        } // end of allocation (and eviction)
+
+
+#endif
+      /************************************************************************************************************/
+
       if (opType == OPTYPE_ERROR)
       {
         if (it->getSrcNode()->brNodeIndex())
@@ -583,7 +650,7 @@ int main(int argc, char *argv[])
           else
           {
             // trace_instruction_counter += current_trace->block_length[current_trace_it];
-            current_trace->confidence = min(1.0f, current_trace->confidence * (1.0f + 1.0f / (float)(1 << current_trace_it)));
+            current_trace->confidence += (1.0f - current_trace->confidence)  / (float)(1 << current_trace_it);
             global_trace_precision += ((double)current_trace->block_length[current_trace_it]) / (double)current_trace->nb_instr_tot;
             current_trace_it++;
             if (current_trace_it >= current_trace->length)
@@ -685,67 +752,6 @@ int main(int argc, char *argv[])
         cond_branch_instruction_counter++;
 
 #ifdef TRACE_LENGTH
-        // HOTSPOT /////////////////////////////////////////////////////////////////////////
-
-        // | branch target                                                 |
-        // |         null         |      tag      |      key      |  null  |
-
-        hotspot_t tag = (branchTarget >> (HOTSPOT_KEY_SIZE + HOTSPOT_OFFSET)) & mask64(HOTSPOT_TAG_SIZE);
-        uint32_t key = (branchTarget >> HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE);
-
-        // TRACE ID /////
-        uint64_t targetID = PC; // traceID(branchTarget, GHR);
-        // uint32_t trace_key = (targetID >> HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE);
-
-        // find corresponding way in hotspot cache
-        int way = -1;
-        hotspot_t counter_sum = 0;
-        for (int it_way = 0; it_way < HOTSPOT_ASSOCIATIVITY; it_way++)
-        {
-          if (hotspot_tag[key][it_way] == tag)
-          {
-            way = it_way;
-            // if (hotspotness[key][it_way] + 1 != 0) // not max yet, redondant with lfu
-            hotspotness[key][it_way]++;
-          }
-          counter_sum += hotspotness[key][it_way];
-        }
-        // LFU
-        if (counter_sum / HOTSPOT_ASSOCIATIVITY > HOTSPOT_AVERAGE_MAX)
-          for (int it_way = 0; it_way < HOTSPOT_ASSOCIATIVITY; it_way++)
-            hotspotness[key][it_way] = (hotspotness[key][it_way] + 1) / 2;
-        // ceiled half
-
-        // HOTSPOT CACHE ALLOCATION (and eviction)
-        if (way == -1)
-        { // is not in cache
-          bool free_way = false;
-          for (int i = 0; i < HOTSPOT_ASSOCIATIVITY; i++)
-            if (hotspotness[key][i] == 0)
-            { // place it in this entry
-              hotspot_tag[key][i] = tag;
-              hotspotness[key][i] = 1;
-              free_way = true;
-            }
-
-          if (!free_way)
-          { // eviction
-            uint16_t min_counter = hotspotness[key][0];
-            uint16_t evict_way = 0;
-
-            for (int i = 0; i < HOTSPOT_ASSOCIATIVITY; i++)
-              if (hotspotness[key][i] < min_counter)
-              {
-                evict_way = i;
-                min_counter = hotspotness[key][i];
-              }
-
-            hotspot_eviction++;
-            // evict selected way
-            hotspotness[key][evict_way] = 1;
-            hotspot_tag[key][evict_way] = tag;
-          }
-        } // end of allocation (and eviction)
 
         // search for a trace from here
         bool room_for_a_trace = false;

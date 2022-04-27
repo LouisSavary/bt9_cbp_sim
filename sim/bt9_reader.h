@@ -1549,7 +1549,8 @@ namespace bt9
                     parseEdgeRecordOptionalFields_(edge_record, ss, token);
                     updateEdgeTable_(edge_record);
 
-                    recouv_coef += (double)(edge_record.nonBrInstCnt() * edge_record.observedTraverseCnt());
+                    // recouv_coef += (double)(edge_record.nonBrInstCnt() * edge_record.observedTraverseCnt());
+                    recouv_coef += (double)(edge_record.observedTraverseCnt());
                     nb_edge++;
                     max_id = std::max(max_id, edge_record.id_);
                 }

@@ -57,7 +57,7 @@
 #define CONF_N_STRONG 0.9
 #define CONF_STRONG 1.0
 
-#define SATURATION_RATE 100
+#define SATURATION_RATE 20
 
 /////////////// STORAGE BUDGET JUSTIFICATION //////////////////////////////////////////////////
 // Binomial table: 2^13 2-bit counters = 16Kb
@@ -471,6 +471,7 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, bool resolveDir, bool predDir, UINT64
 		{
 			if (resolveDir && (altPredVal < TAGE_PRED_MAX -1 ||
 					 (altPredVal == TAGE_PRED_MAX -1 && !(rand() % SATURATION_RATE))))
+					// (altPredVal == TAGE_PRED_MAX -1) ))
 				++(tagTables[pred.altTable][pred.altIndex].pred);
 			else if (!resolveDir && (altPredVal > 1 ||
 						(altPredVal == 1 && !(rand() %SATURATION_RATE))))
