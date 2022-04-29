@@ -742,8 +742,8 @@ int main(int argc, char *argv[])
           trace_pred[PC][branch_to - 1].count_use ++;
         }
 
-        numMispred += predDir && (best_pred != 0);
-
+        numMispredTrace += predDir && (best_pred != 0); // said to take the first branch despite a trace was better
+        numMispred += predDir!=branchTaken;
         // if (predDir != branchTaken)
         // {
         //   numMispred++; // update mispred stats
