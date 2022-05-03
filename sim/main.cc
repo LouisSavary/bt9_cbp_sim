@@ -41,7 +41,8 @@ typedef uint16_t hotspot_t;
 #define TRACE_CONF_THRES 0.6
 #define TRACE_CONF_EVICT 0.1
 
-#define TRACE_CACHE_SIZE 3 // because we only have three address between two instruction addresses
+#define TRACE_CACHE_SIZE 3       // because we only have three address between two instruction addresses
+#define PREDICATE_MAX_LENGTH 256 // bytes -> 64 instructions
 
 typedef struct
 {
@@ -52,9 +53,9 @@ typedef struct
   // uint64_t trace_id = 0;
   // double precision = 0.0;
   float confidence = 0.0;
-  uint8_t length = 0;
   uint32_t pred;
   uint32_t count_use = 0;
+  uint16_t length = 0;
 
 } trace_t;
 
@@ -79,6 +80,18 @@ bool operator==(const trace_t &lhs, const trace_t &rhs)
   //   return false;
   return true;
 }
+
+typedef struct
+{
+  uint32_t branch_id = 0;
+  uint32_t edge_id = 0;
+  uint32_t over_else_edge_id = 0;
+
+  uint16_t then_length = 0;
+  uint16_t else_length = 0;
+  bool has_else = false;
+
+} predicated_block_t;
 
 /////////////////////////////////////////////////////////////////
 
@@ -258,39 +271,44 @@ int main(int argc, char *argv[])
     printf("usage: %s <trace>\n", argv[0]);
     exit(-1);
   }
-  
+
   ///////////////////////////////////////////////
   // read environment variables
   ///////////////////////////////////////////////
-  char* env_read;
+  char *env_read;
 
   long unsigned env_pred_trig_thres = TRACE_PRED_TRIG_THRES;
   env_read = getenv("TRACE_PRED_TRIG_THRES");
-  if (env_read != nullptr) {
+  if (env_read != nullptr)
+  {
     env_pred_trig_thres = stoul(env_read);
   }
 
   long unsigned env_inst_leng_thres = TRACE_INST_LENG_THRES;
   env_read = getenv("TRACE_INST_LENG_THRES");
-  if (env_read != nullptr) {
+  if (env_read != nullptr)
+  {
     env_inst_leng_thres = stoul(env_read);
   }
 
   long unsigned env_inst_leng_max = TRACE_INST_LENG_MAX;
   env_read = getenv("TRACE_INST_LENG_MAX");
-  if (env_read != nullptr) {
+  if (env_read != nullptr)
+  {
     env_inst_leng_max = stoul(env_read);
   }
 
   double env_conf_thres = TRACE_CONF_THRES;
   env_read = getenv("TRACE_CONF_THRES");
-  if (env_read != nullptr) {
+  if (env_read != nullptr)
+  {
     env_conf_thres = stod(env_read);
   }
 
   double env_conf_evict = TRACE_CONF_EVICT;
   env_read = getenv("TRACE_CONF_THRES");
-  if (env_read != nullptr) {
+  if (env_read != nullptr)
+  {
     env_conf_evict = stod(env_read);
   }
 
@@ -312,6 +330,7 @@ int main(int argc, char *argv[])
   hotspot_t hotspotness[(uint64_t)1 << HOTSPOT_KEY_SIZE][HOTSPOT_ASSOCIATIVITY];
   hotspot_t hotspot_tag[(uint64_t)1 << HOTSPOT_KEY_SIZE][HOTSPOT_ASSOCIATIVITY];
 
+  unordered_map<uint32_t, predicated_block_t> predication(0);
   unordered_map<uint64_t, trace_t[TRACE_CACHE_SIZE]> trace_pred(0);
   int count_fail_conf = 0;
   int count_fail_size = 0;
@@ -387,39 +406,20 @@ int main(int argc, char *argv[])
   trace_t *current_trace = nullptr;
   short unsigned int current_trace_it = 0;
 
+  UINT64 global_predicated_instr_nb = 0;
+  UINT64 global_predicated_nb = 0;
+
   // // initialize the future reader
-  uint32_t future_cond_br = 0;
+  uint32_t future_cond_branch = 0;
+  uint32_t future_predication = 0;
   int future_length = 0;
   bt9::BT9Reader future_reader(trace_path);
   bt9::BT9Reader::BranchInstanceIterator future_it = future_reader.begin();
-  // while (future_length < 32)
-  // {
-  //   while (future_it != future_reader.end() && future_it->getSrcNode()->brClass().conditionality != bt9::BrClass::Conditionality::CONDITIONAL)
-  //   {
-  //     future_it++;
-  //   }
-
-  //   // should not happen
-  //   if (future_it == future_reader.end())
-  //     break;
-  //   // will not cause problem as there is not enough cond_br to trigger a trace construction
-
-  //   updateGHR(future_cond_br, future_it->getEdge()->isTakenPath());
-  //   future_length++;
-  //   future_it++;
-  // }
 
   // MAIN LOOP
   for (auto it = bt9_reader.begin(); it != bt9_reader.end(); ++it)
   {
     CheckHeartBeat(++numIter, numMispred); // Here numIter will be equal to number of branches read
-    // char jauge[JAUGE_LENGTH+1];
-    // jauge[JAUGE_LENGTH] = '\0';
-    // for (unsigned int i = 0; i < JAUGE_LENGTH; i ++)
-    //   if (i <= numIter * JAUGE_LENGTH / branch_instruction_counter)
-    //     jauge[i] = '#';
-    //   else jauge[i] = ' ';
-    // printf("\tproceeds \t : (%s) %10lld\t%6ld\r", jauge, numIter, trace_pred.size());
 
     try
     {
@@ -535,68 +535,66 @@ int main(int argc, char *argv[])
       /************************************************************************************************************/
 
 #ifdef TRACE_LENGTH
-        // HOTSPOT /////////////////////////////////////////////////////////////////////////
+      // HOTSPOT /////////////////////////////////////////////////////////////////////////
 
-        // | branch target                                                 |
-        // |         null         |      tag      |      key      |  null  |
+      // | branch target                                                 |
+      // |         null         |      tag      |      key      |  null  |
 
-        hotspot_t tag = (branchTarget >> (HOTSPOT_KEY_SIZE + HOTSPOT_OFFSET)) & mask64(HOTSPOT_TAG_SIZE);
-        uint32_t key = (branchTarget >> HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE);
+      hotspot_t tag = (branchTarget >> (HOTSPOT_KEY_SIZE + HOTSPOT_OFFSET)) & mask64(HOTSPOT_TAG_SIZE);
+      uint32_t key = (branchTarget >> HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE);
 
-        // TRACE ID /////
-        uint64_t targetID = PC; // traceID(branchTarget, GHR);
-        // uint32_t trace_key = (targetID >> HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE);
+      // TRACE ID /////
+      uint64_t targetID = PC; // traceID(branchTarget, GHR);
 
-        // find corresponding way in hotspot cache
-        int way = -1;
-        hotspot_t counter_sum = 0;
-        for (int it_way = 0; it_way < HOTSPOT_ASSOCIATIVITY; it_way++)
+      // find corresponding way in hotspot cache
+      int way = -1;
+      hotspot_t counter_sum = 0;
+      for (int it_way = 0; it_way < HOTSPOT_ASSOCIATIVITY; it_way++)
+      {
+        if (hotspot_tag[key][it_way] == tag)
         {
-          if (hotspot_tag[key][it_way] == tag)
-          {
-            way = it_way;
-            // if (hotspotness[key][it_way] + 1 != 0) // not max yet, redondant with lfu
-            hotspotness[key][it_way]++;
-          }
-          counter_sum += hotspotness[key][it_way];
+          way = it_way;
+          // if (hotspotness[key][it_way] + 1 != 0) // not max yet, redondant with lfu
+          hotspotness[key][it_way]++;
         }
-        // LFU
-        if (counter_sum / HOTSPOT_ASSOCIATIVITY > HOTSPOT_AVERAGE_MAX)
-          for (int it_way = 0; it_way < HOTSPOT_ASSOCIATIVITY; it_way++)
-            hotspotness[key][it_way] = (hotspotness[key][it_way] + 1) / 2;
-        // ceiled half
+        counter_sum += hotspotness[key][it_way];
+      }
+      // LFU
+      if (counter_sum / HOTSPOT_ASSOCIATIVITY > HOTSPOT_AVERAGE_MAX)
+        for (int it_way = 0; it_way < HOTSPOT_ASSOCIATIVITY; it_way++)
+          hotspotness[key][it_way] = (hotspotness[key][it_way] + 1) / 2;
+      // ceiled half
 
-        // HOTSPOT CACHE ALLOCATION (and eviction)
-        if (way == -1)
-        { // is not in cache
-          bool free_way = false;
+      // HOTSPOT CACHE ALLOCATION (and eviction)
+      if (way == -1)
+      { // is not in cache
+        bool free_way = false;
+        for (int i = 0; i < HOTSPOT_ASSOCIATIVITY; i++)
+          if (hotspotness[key][i] == 0)
+          { // place it in this entry
+            hotspot_tag[key][i] = tag;
+            hotspotness[key][i] = 1;
+            free_way = true;
+          }
+
+        if (!free_way)
+        { // eviction
+          uint16_t min_counter = hotspotness[key][0];
+          uint16_t evict_way = 0;
+
           for (int i = 0; i < HOTSPOT_ASSOCIATIVITY; i++)
-            if (hotspotness[key][i] == 0)
-            { // place it in this entry
-              hotspot_tag[key][i] = tag;
-              hotspotness[key][i] = 1;
-              free_way = true;
+            if (hotspotness[key][i] < min_counter)
+            {
+              evict_way = i;
+              min_counter = hotspotness[key][i];
             }
 
-          if (!free_way)
-          { // eviction
-            uint16_t min_counter = hotspotness[key][0];
-            uint16_t evict_way = 0;
-
-            for (int i = 0; i < HOTSPOT_ASSOCIATIVITY; i++)
-              if (hotspotness[key][i] < min_counter)
-              {
-                evict_way = i;
-                min_counter = hotspotness[key][i];
-              }
-
-            hotspot_eviction++;
-            // evict selected way
-            hotspotness[key][evict_way] = 1;
-            hotspot_tag[key][evict_way] = tag;
-          }
-        } // end of allocation (and eviction)
-
+          hotspot_eviction++;
+          // evict selected way
+          hotspotness[key][evict_way] = 1;
+          hotspot_tag[key][evict_way] = tag;
+        }
+      } // end of allocation (and eviction)
 
 #endif
       /************************************************************************************************************/
@@ -615,22 +613,17 @@ int main(int argc, char *argv[])
 
 #ifdef TRACE_LENGTH
         // HOTSPOT TRACE PREDICTION STAT ///////////////////////////////////////////////////
-        // if (future_length > 0 && branchTaken == getpred(future_cond_br, 32 - future_length))
-        // {
-        //   std::bitset<32> x(future_cond_br);
-
-        //   std::cout << "it and future desynch " << numIter << " " << x << " " << future_length << '\n';
-        //   exit(-1);
-        // }
 
         if (current_trace != nullptr)
         {
-          // if mispred -> quit trace
 
           bool trace_br = getpred(current_trace->pred, current_trace_it);
           bool is_taken = it->getEdge()->isTakenPath();
-          if (trace_br != is_taken)
+          bool is_predicated = predication[it->getSrcNode()->brNodeIndex()].then_length != 0;
+          if (trace_br != is_taken && !is_predicated)
           {
+            // if predicated, cannot be mispredicted
+
             // TODO all sorts of metrics
             // current_trace->nb_early_exit[current_trace_it]++;
 
@@ -649,8 +642,14 @@ int main(int argc, char *argv[])
           }
           else
           {
+            if (is_predicated)
+            {
+              global_predicated_instr_nb += predication[it->getSrcNode()->brNodeIndex()].then_length + 1;
+              global_predicated_instr_nb += predication[it->getSrcNode()->brNodeIndex()].else_length;
+            }
+
             // trace_instruction_counter += current_trace->block_length[current_trace_it];
-            current_trace->confidence += (1.0f - current_trace->confidence)  / (float)(1 << current_trace_it);
+            current_trace->confidence += (1.0f - current_trace->confidence) / (float)(1 << current_trace_it) * is_predicated;
             global_trace_precision += ((double)current_trace->block_length[current_trace_it]) / (double)current_trace->nb_instr_tot;
             current_trace_it++;
             if (current_trace_it >= current_trace->length)
@@ -685,18 +684,20 @@ int main(int argc, char *argv[])
 
             if (future_it == future_reader.end())
             {
-              future_cond_br >>= (trace.length - future_length);
+              future_cond_branch >>= (trace.length - future_length);
+              future_predication >>= (trace.length - future_length);
               future_length = trace.length;
               break;
             }
 
-            future_cond_br = updateGHR(future_cond_br, future_it->getEdge()->isTakenPath());
+            future_cond_branch = updateGHR(future_cond_branch, future_it->getEdge()->isTakenPath());
+            future_predication = updateGHR(future_predication, predication[future_it->getSrcNode()->brNodeIndex()].then_length > 0);
             future_length++;
             future_it++;
           }
 
           int length = 0;
-          while (length < trace.length && getpred(trace.pred, length) == getpred(future_cond_br, length + 32 - future_length))
+          while (length < trace.length && (getpred(future_predication, length + 32 - future_length) || getpred(trace.pred, length) == getpred(future_cond_branch, length + 32 - future_length)))
             length++;
 
           if (length > best_length)
@@ -727,7 +728,7 @@ int main(int argc, char *argv[])
           numMispredTrace += predDir_bis && (best_pred != i);
           if (predDir_bis && conf > confidence)
           {
-            branch_to = i; // hope for only one, other wise the last will be taken
+            branch_to = i;
             confidence = conf;
           }
         }
@@ -739,11 +740,11 @@ int main(int argc, char *argv[])
           current_trace_it = 1;
           // trace_instruction_counter += current_trace->block_length[0];
           global_trace_use++;
-          trace_pred[PC][branch_to - 1].count_use ++;
+          trace_pred[PC][branch_to - 1].count_use++;
         }
 
         numMispredTrace += predDir && (best_pred != 0); // said to take the first branch despite a trace was better
-        numMispred += predDir!=branchTaken;
+        numMispred += predDir != branchTaken;
         // if (predDir != branchTaken)
         // {
         //   numMispred++; // update mispred stats
@@ -796,6 +797,69 @@ int main(int argc, char *argv[])
           while (new_trace.confidence > env_conf_thres)
           {
             prepred_dir = snd_pred.GetPrediction(pc_pred);
+
+            bool is_block_predicated = false;
+            if (snd_pred.getConfidence() <= 0.7)
+            { // predication processing
+            printf("unconfident prediction \t");
+              if (predication[node_it->brNodeIndex()].then_length != 0)
+              {
+                printf("predicated");
+                // add predication block to new_trace
+                is_block_predicated = true;
+              }
+              else
+              {
+                printf("is predicatable\t");
+                // IF block detection : forward conditional branch
+                // condition not heavily biaised => certainly data dependent => predication instead of prediction
+                bt9::BT9ReaderEdgeRecord *taken_edge = node_it.getNextEdge(true);
+                // length constraint ?
+                bool is_forward = taken_edge != nullptr && taken_edge->brVirtualTarget() > node_it->brVirtualAddr();// && taken_edge->brVirtualTarget() < node_it->brVirtualAddr() + PREDICATE_MAX_LENGTH;
+
+                if (is_forward)
+                {
+                  printf("is forward\t");
+                  // if paths end at the same point
+                  bt9::BT9ReaderEdgeRecord *not_taken_edge = node_it.getNextEdge(false);
+
+                  if (not_taken_edge != nullptr)
+                  {
+                    bt9::BT9Reader::NodeTableIterator pre_else_node(&bt9_reader, not_taken_edge->destNodeIndex());
+                    bt9::BT9ReaderEdgeRecord *over_else_path = pre_else_node.getNextEdge(true);
+
+                    if (over_else_path != nullptr)
+                    {
+                      bool if_block = not_taken_edge->destNodeIndex() == taken_edge->destNodeIndex();
+                      bool if_else_block = !if_block && pre_else_node->brClassConditionalityIs("UCD") && over_else_path->destNodeIndex() == taken_edge->destNodeIndex();
+
+                      printf("found edges%d %d %d %d\t", not_taken_edge->destNodeIndex(), taken_edge->destNodeIndex(), pre_else_node->brClassConditionalityIs("UCD"), over_else_path->destNodeIndex() == taken_edge->destNodeIndex());
+                      // construct predication block
+                      if (if_block || if_else_block)
+                      {
+                        printf("is if or ifelse");
+                        is_block_predicated = true;
+                        global_predicated_nb ++;
+
+                        predicated_block_t predicate;
+                        predicate.branch_id = node_it->brNodeIndex();
+                        predicate.edge_id = taken_edge->edgeIndex();
+                        predicate.then_length = (taken_edge->brVirtualTarget() - node_it->brVirtualAddr()) / 4;
+                        if (if_else_block)
+                        {
+                          predicate.over_else_edge_id = over_else_path->edgeIndex();
+                          predicate.has_else = true;
+                          predicate.else_length = (over_else_path->brVirtualTarget() - pre_else_node->brVirtualAddr() / 4);
+                        }
+                        predication[node_it->brNodeIndex()] = predicate;
+                      }
+                    }
+                  }
+                }
+              }
+              printf("\n");
+            }
+
             int next_edge = node_it.nextConditionalNode(prepred_dir);
 
             if (next_edge < 0 || trace_length_instr + node_it.getPathInstrucCount() > env_inst_leng_max)
@@ -875,7 +939,20 @@ int main(int argc, char *argv[])
         exit(-1); // this should never happen, if it does please email CBP org chair.
       }
 
-      trace_instruction_counter += (it->getEdge()->nonBrInstCnt() + 1) * (current_trace != nullptr);
+      // count in-trace-executed instructions
+      if (current_trace != nullptr)
+      {
+        predicated_block_t block = predication[it->getSrcNode()->brNodeIndex()];
+        if (block.then_length > 0)
+        {
+          // execute predicated block
+          trace_instruction_counter += block.then_length + block.else_length + 1;
+          bool taken_path = it->getEdge()->isTakenPath();
+          total_instruction_counter_bis += block.then_length * !taken_path + block.else_length * taken_path;
+        }
+        else
+          trace_instruction_counter += it->getEdge()->nonBrInstCnt() + 1;
+      }
 
       /************************************************************************************************************/
     }
@@ -997,6 +1074,10 @@ int main(int argc, char *argv[])
     printf("  MEAN_TRACE_USAGE            \t : %10.6f\n", (double)trace_instruction_counter / (double)total_instruction_counter_bis);
     printf("  UNUSED_TRACE_PER            \t : %10.6f\n", 100 * (double)global_nb_unused_trace / (double)(global_nb_trace));
   }
+  printf("  PREDICATE_EXEC_INSTR        \t : %10lld\n", global_predicated_instr_nb);
+  printf("  PREDICATE_BLOCK             \t : %10lld\n", global_predicated_nb);
+  printf("  PREDICATE_EXEC_INSTR_RATE   \t : %10.6f\n", (double)global_predicated_instr_nb/ (double)total_instruction_counter_bis);
+  
 #endif
 
   // ver2      printf("  MISPRED_PER_1K_INST_BTB_MISS\t : %10.4f",   1000.0*(double)(numMispred_btbMISS)/(double)(total_instruction_counter));

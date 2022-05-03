@@ -117,37 +117,37 @@ sub init_stats{
 sub get_stats{
     
     for($dirnum=0; $dirnum<@dirs; $dirnum++){
-	$dir = $dirs[$dirnum];
-	
-	for($ii=0; $ii< $num_w; $ii++){
-	    $wname   = $w[$ii];
-	    $fname   = $dir . $wname . ".res";
-	    $readable = 1;
-	    
-	    open(IN, $fname) or $readable=0;
-	    
-	    print "cannot open $fname for read\n" unless $readable;
-	    
-	    $found=0;
-	    
-	    while( ($readable) &&  ($_ = <IN>) ){
-            @words = split/\s+/, $_;
-            $num_words = scalar(@words);
+        $dir = $dirs[$dirnum];
+        
+        for($ii=0; $ii< $num_w; $ii++){
+            $wname   = $w[$ii];
+            $fname   = $dir . $wname . ".res";
+            $readable = 1;
             
-            for($jj=0; $jj<$num_words-1; $jj++){
-                for($jjj=0; $jjj<$statsize; $jjj++){
-                    if($words[$jj] && ($words[$jj] eq $stat[$jjj]) ){
-                        $pos = $jj+2;
-                        $val = $words[$pos];
-                        $data[$dirnum][$ii][$jjj] += $val;
-                        printf "stat match for $stat[$jjj] found for $_" if($debug);
-                        $found++;
+            open(IN, $fname) or $readable=0;
+            
+            print "cannot open $fname for read\n" unless $readable;
+            
+            $found=0;
+            
+            while( ($readable) &&  ($_ = <IN>) ){
+                @words = split/\s+/, $_;
+                $num_words = scalar(@words);
+                
+                for($jj=0; $jj<$num_words-1; $jj++){
+                    for($jjj=0; $jjj<$statsize; $jjj++){
+                        if($words[$jj] && ($words[$jj] eq $stat[$jjj]) ){
+                            $pos = $jj+2;
+                            $val = $words[$pos];
+                            $data[$dirnum][$ii][$jjj] += $val;
+                            printf "stat match for $stat[$jjj] found for $_" if($debug);
+                            $found++;
+                        }
                     }
                 }
             }
-	    }
-	    close(IN);
-	}
+            close(IN);
+        }
     }
     
 }

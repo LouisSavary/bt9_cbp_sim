@@ -353,6 +353,16 @@ namespace bt9
                 return branch_target;
             }
 
+            BT9ReaderEdgeRecord* getNextEdge(bool taken) {
+                BT9ReaderNodeRecord node = this->operator*();
+                list<BT9ReaderEdgeRecord> edge_list = bt9_reader_->edge_hash_table.find(node.brVirtualAddr())->second;
+                list<BT9ReaderEdgeRecord>::iterator it;
+                for (it = edge_list.begin(); it != edge_list.end(); it++)
+                    if (it->isTakenPath() == taken)
+                        return bt9_reader_->edge_order_vector_.at(it->edgeIndex());
+                return nullptr;
+            }
+
             /// move in the graph by taking a branch
             /// return the first taken conditional branch
             /// set index_ before the next conditional branch
@@ -362,41 +372,29 @@ namespace bt9
                 BT9ReaderNodeRecord node = this->operator*();
                 bool conditional = node.brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
                 bool direct = node.brClass().directness == BrClass::Directness::DIRECT;
-                int cond_path = -2;
+                int cond_path = -1;
                 path_instr_count = 0;
                 branch_target = 0;
 
                 // start on a conditional branch, otherwise it is either indirect or ended
                 if (!conditional)
-                    return -2;
+                    return -1;
 
                 // else  find a conditional branch that starts from node
-                std::list<BT9ReaderEdgeRecord> edgelist = bt9_reader_->edge_hash_table.find(node.brVirtualAddr())->second;
-                std::list<BT9ReaderEdgeRecord>::const_iterator edge_it = edgelist.begin();
-                std::list<BT9ReaderEdgeRecord>::const_iterator edge_end = edgelist.end();
+                std::list<BT9ReaderEdgeRecord> edgelist;
+                std::list<BT9ReaderEdgeRecord>::const_iterator edge_it;
+                std::list<BT9ReaderEdgeRecord>::const_iterator edge_end;
 
-                while (edge_it != edge_end)
-                {
-                    if (edge_it->srcNodeIndex() == index_)
-                    {
-                        if (edge_it->isTakenPath() == taken)
-                        {
-                            cond_path = edge_it->edgeIndex();
-                            index_ = edge_it->destNodeIndex();
-                            path_instr_count = (edge_it->nonBrInstCnt()) + 1;
-                            branch_target = edge_it->brVirtualTarget();
-                            break;
-                        }
-                    }
-                    ++edge_it;
-                }
-
-                if (cond_path == -2)
-                {
-                    // no branch found -> broken path
-                    return -2;
-                }
+                auto edge = getNextEdge(taken);
+                if (edge == nullptr)
+                    return -1;
                 
+                cond_path = edge->edgeIndex();
+                index_ = edge->destNodeIndex();
+                path_instr_count = (edge->nonBrInstCnt()) + 1;
+                branch_target = edge->brVirtualTarget();
+
+       
                 // path to the next conditional br
                 conditional = this->operator*().brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
                 direct = this->operator*().brClass().directness == BrClass::Directness::DIRECT;
@@ -1036,6 +1034,7 @@ namespace bt9
 
         /// Edge table (wrapper class for the internal edge table) that is visible to the user
         EdgeTable edge_table;
+
 
     private:
         /*!

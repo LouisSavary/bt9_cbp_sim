@@ -11,18 +11,45 @@ num_parallel_jobs=4
 
 ###########  HOW TO RUN JOBS?  ################
 
+$DUMP_FILE = "/tmp/doworkbench_dump_file"
+$RESULT_DIR = "../results/trace_workbench"
+$wsuite = "workbench"
+$trace_dir = "~/traces/"
+
+
+while (@ARGV) {
+    $option = shift;
+ 
+    if ($option eq "-w") {
+        $wsuite = shift;
+    }elsif ($option eq "-d") {
+        $dest_dir = shift;
+    }elsif ($option eq "-f") {
+        $DUMP_FILE = shift;
+    }elsif ($option eq "-t") {
+        $trace_dir = shift;
+    }else{
+	usage();
+        die "Incorrect option ... Quitting\n";
+    }
+}
+if ($#ARGV == 2 && $ARGV[0] == "-d")
+  RESULT_DIR = $ARGV[1]
+
 # The following line will launch sims for all workloads when you run ./doit.sh (comment it if you dont want it to) 
 
 # ./runall.pl -s ../sim/predictor -w all -f  $num_parallel_jobs -d ../results/SEZNEC2014.08KB
 
-./runall2.pl -s ../sim/predictor -w workbench -f  $num_parallel_jobs -d ../results/trace_workbench
+./runall2.pl -s ../sim/predictor -w $wsuite -f  $num_parallel_jobs -d $RESULT_DIR 
 
 
 ###########  HOW TO GET STATS?  ################
 
 # This scripts creates stats, after all the earlier jobs finish
 
-./getdata.pl -w workbench -d ../results/trace_workbench
+./getdata.pl -w $wsuite -d $RESULT_DIR > $DUMP_FILE
+python graph_gen_script.py $DUMP_FILE
+
 #./getdata.pl -w all -d ../results/SEZNEC2014.08KB
 
 # To compare MPKI numbers against GSHARE for the provided benchmarks , uncomment this line 
