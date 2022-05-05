@@ -23,8 +23,8 @@ do
         d) dest_dir=${OPTARG};;
         f) DUMP_FILE=${OPTARG};;
         t) trace_dir=${OPTARG};;
-        g) gen_graph=1
-        G) gen_graph=0
+        g) gen_graph=1;;
+        G) gen_graph=0;;
     esac
 done
 
