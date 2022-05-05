@@ -11,30 +11,22 @@ num_parallel_jobs=4
 
 ###########  HOW TO RUN JOBS?  ################
 
-$DUMP_FILE = "/tmp/doworkbench_dump_file"
-$RESULT_DIR = "../results/trace_workbench"
-$wsuite = "workbench"
-$trace_dir = "~/traces/"
-
-
-while (@ARGV) {
-    $option = shift;
- 
-    if ($option eq "-w") {
-        $wsuite = shift;
-    }elsif ($option eq "-d") {
-        $dest_dir = shift;
-    }elsif ($option eq "-f") {
-        $DUMP_FILE = shift;
-    }elsif ($option eq "-t") {
-        $trace_dir = shift;
-    }else{
-	usage();
-        die "Incorrect option ... Quitting\n";
-    }
-}
-if ($#ARGV == 2 && $ARGV[0] == "-d")
-  RESULT_DIR = $ARGV[1]
+DUMP_FILE="/tmp/doworkbench_dump_file"
+RESULT_DIR="../results/trace_workbench"
+wsuite="workbench"
+trace_dir="~/traces/"
+gen_graph=0
+while getopts w:d:f:t: flag
+do
+    case "${flag}" in
+        w) wsuite=${OPTARG};;
+        d) dest_dir=${OPTARG};;
+        f) DUMP_FILE=${OPTARG};;
+        t) trace_dir=${OPTARG};;
+        g) gen_graph=1
+        G) gen_graph=0
+    esac
+done
 
 # The following line will launch sims for all workloads when you run ./doit.sh (comment it if you dont want it to) 
 
@@ -48,7 +40,12 @@ if ($#ARGV == 2 && $ARGV[0] == "-d")
 # This scripts creates stats, after all the earlier jobs finish
 
 ./getdata.pl -w $wsuite -d $RESULT_DIR > $DUMP_FILE
-python graph_gen_script.py $DUMP_FILE
+if [ $gen_graph ]
+then 
+    python graph_gen_script.py $DUMP_FILE
+else 
+    cat $DUMP_FILE
+fi
 
 #./getdata.pl -w all -d ../results/SEZNEC2014.08KB
 

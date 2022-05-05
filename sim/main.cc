@@ -801,16 +801,16 @@ int main(int argc, char *argv[])
             bool is_block_predicated = false;
             if (snd_pred.getConfidence() <= 0.7)
             { // predication processing
-            printf("unconfident prediction \t");
+            // printf("unconfident prediction \t");
               if (predication[node_it->brNodeIndex()].then_length != 0)
               {
-                printf("predicated");
+                // printf("predicated");
                 // add predication block to new_trace
                 is_block_predicated = true;
               }
               else
               {
-                printf("is predicatable\t");
+                // printf("is predicatable\t");
                 // IF block detection : forward conditional branch
                 // condition not heavily biaised => certainly data dependent => predication instead of prediction
                 bt9::BT9ReaderEdgeRecord *taken_edge = node_it.getNextEdge(true);
@@ -819,7 +819,7 @@ int main(int argc, char *argv[])
 
                 if (is_forward)
                 {
-                  printf("is forward\t");
+                  // printf("is forward\t");
                   // if paths end at the same point
                   bt9::BT9ReaderEdgeRecord *not_taken_edge = node_it.getNextEdge(false);
 
@@ -833,11 +833,11 @@ int main(int argc, char *argv[])
                       bool if_block = not_taken_edge->destNodeIndex() == taken_edge->destNodeIndex();
                       bool if_else_block = !if_block && pre_else_node->brClassConditionalityIs("UCD") && over_else_path->destNodeIndex() == taken_edge->destNodeIndex();
 
-                      printf("found edges%d %d %d %d\t", not_taken_edge->destNodeIndex(), taken_edge->destNodeIndex(), pre_else_node->brClassConditionalityIs("UCD"), over_else_path->destNodeIndex() == taken_edge->destNodeIndex());
+                      // printf("found edges%d %d %d %d\t", not_taken_edge->destNodeIndex(), taken_edge->destNodeIndex(), pre_else_node->brClassConditionalityIs("UCD"), over_else_path->destNodeIndex() == taken_edge->destNodeIndex());
                       // construct predication block
                       if (if_block || if_else_block)
                       {
-                        printf("is if or ifelse");
+                        // printf("is if or ifelse");
                         is_block_predicated = true;
                         global_predicated_nb ++;
 
@@ -857,7 +857,7 @@ int main(int argc, char *argv[])
                   }
                 }
               }
-              printf("\n");
+              // printf("\n");
             }
 
             int next_edge = node_it.nextConditionalNode(prepred_dir);
@@ -873,8 +873,17 @@ int main(int argc, char *argv[])
             new_trace.confidence *= snd_pred.getConfidence();
             // new_trace.cond_br[i] = (unsigned)next_edge;
             new_trace.pred |= prepred_dir << i;
-            new_trace.block_length[i] = node_it.getPathInstrucCount();
-            trace_length_instr += node_it.getPathInstrucCount();
+
+            uint32_t overhead = 0;
+            if (is_block_predicated) {
+              if (prepred_dir)
+                overhead = predication[node_it->brNodeIndex()].then_length;
+              else
+                overhead = predication[node_it->brNodeIndex()].else_length;
+            }
+
+            new_trace.block_length[i] = node_it.getPathInstrucCount() + overhead;
+            trace_length_instr += node_it.getPathInstrucCount() + overhead;
             new_trace.length = i + 1;
 
             snd_pred.UpdatePredictor(pc_pred, prepred_dir, prepred_dir, 0);
