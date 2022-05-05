@@ -40,7 +40,7 @@ done
 # This scripts creates stats, after all the earlier jobs finish
 
 ./getdata.pl -w $wsuite -d $RESULT_DIR > $DUMP_FILE
-if [ $gen_graph ]
+if [ $gen_graph -eq 1 ]
 then 
     python graph_gen_script.py $DUMP_FILE
 else 
