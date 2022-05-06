@@ -651,7 +651,7 @@ int main(int argc, char *argv[])
             }
 
             // trace_instruction_counter += current_trace->block_length[current_trace_it];
-            current_trace->confidence += (1.0f - current_trace->confidence) / (float)(1 << current_trace_it) * is_predicated;
+            current_trace->confidence += (1.0f - current_trace->confidence) / (float)(1 << current_trace_it) * !is_predicated;
             global_trace_precision += ((double)current_trace->block_length[current_trace_it]) / (double)current_trace->nb_instr_tot;
             current_trace_it++;
             if (current_trace_it >= current_trace->length)
@@ -724,7 +724,7 @@ int main(int argc, char *argv[])
         bool predDir = false;
 
         predDir = brpred.GetPrediction(PC);
-        brpred.UpdatePredictor(PC, branchTaken && best_pred==0, predDir, branchTarget);
+        brpred.UpdatePredictor(PC, branchTaken, predDir, branchTarget);
 
         int branch_to = 0;
         float confidence = 0;
@@ -758,7 +758,7 @@ int main(int argc, char *argv[])
         }
 
         numMispredTrace += predDir && (best_pred != 0); // said to take the first branch despite a trace was better
-        numMispred += predDir != (branchTaken && best_pred==0);
+        numMispred += predDir != (branchTaken);
         // if (predDir != branchTaken)
         // {
         //   numMispred++; // update mispred stats
