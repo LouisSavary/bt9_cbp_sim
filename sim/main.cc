@@ -812,7 +812,7 @@ int main(int argc, char *argv[])
             prepred_dir = snd_pred.GetPrediction(pc_pred);
 
             bool is_block_predicated = false;
-            if (snd_pred.getConfidence() <= 0.6)
+            if (snd_pred.getConfidence() <= 0.7)
             { // predication processing
               if (predication[node_it->brNodeIndex()].branch_id != 0)
               {
@@ -825,7 +825,7 @@ int main(int argc, char *argv[])
                 // condition not heavily biaised => certainly data dependent => predication instead of prediction
                 bt9::BT9ReaderEdgeRecord *taken_edge = node_it.getNextEdge(true);
                 // length constraint ?
-                bool is_forward = taken_edge != nullptr && taken_edge->brVirtualTarget() > node_it->brVirtualAddr() && taken_edge->brVirtualTarget() < node_it->brVirtualAddr() + PREDICATE_MAX_LENGTH;
+                bool is_forward = taken_edge != nullptr && taken_edge->brVirtualTarget() > node_it->brVirtualAddr();// && taken_edge->brVirtualTarget() < node_it->brVirtualAddr() + PREDICATE_MAX_LENGTH;
 
                 if (is_forward)
                 {
