@@ -915,7 +915,10 @@ namespace bt9
                 bt9_reader_ = rhs.bt9_reader_;
                 reach_end_ = rhs.reach_end_;
                 index_ = rhs.index_;
-                br_inst_ = rhs.br_inst_;
+                br_inst_.dest_node_rec_ptr_ = rhs.br_inst_.dest_node_rec_ptr_;
+                br_inst_.edge_rec_ptr_ = rhs.br_inst_.edge_rec_ptr_;
+                br_inst_.src_node_rec_ptr_ = rhs.br_inst_.src_node_rec_ptr_;
+                br_inst_.valid_ = rhs.br_inst_.valid_;
 
                 return *this;
             }

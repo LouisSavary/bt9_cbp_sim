@@ -87,8 +87,8 @@ typedef struct
   uint32_t edge_id = 0;
   uint32_t over_else_edge_id = 0;
 
-  uint16_t then_length = 0;
-  uint16_t else_length = 0;
+  uint32_t then_length = 0;
+  uint32_t else_length = 0;
   bool has_else = false;
 
 } predicated_block_t;
@@ -246,17 +246,17 @@ uint32_t mask32(unsigned int length)
   return ((uint32_t)1 << length) - 1;
 }
 
-uint64_t traceID(uint64_t PC, uint32_t GHR)
-{
-  //   |            |  |  | 16 bits
-  //   |------------|--|    PC
-  //   |------------|  |--| GHR
-  return PC;
-  // uint64_t mask_GHR = ((GHR & mask64(GHR_LENGTH))>>2)<<4 | (GHR&3);
-  // return (PC<<2) ^ mask_GHR;
+// uint64_t traceID(uint64_t PC, uint32_t GHR)
+// {
+//   //   |            |  |  | 16 bits
+//   //   |------------|--|    PC
+//   //   |------------|  |--| GHR
+//   return PC;
+//   // uint64_t mask_GHR = ((GHR & mask64(GHR_LENGTH))>>2)<<4 | (GHR&3);
+//   // return (PC<<2) ^ mask_GHR;
 
-  // return PC<<GHR_LENGTH | GHR;
-}
+//   // return PC<<GHR_LENGTH | GHR;
+// }
 
 uint32_t updateGHR(uint32_t GHR, bool taken)
 {
@@ -401,6 +401,7 @@ int main(int argc, char *argv[])
   double global_trace_precision = 0;
   uint64_t global_trace_evicted = 0;
   uint64_t hotspot_eviction = 0;
+  uint64_t global_overhead = 0;
 
   long long unsigned int trace_instruction_counter = 0;
   trace_t *current_trace = nullptr;
@@ -612,14 +613,15 @@ int main(int argc, char *argv[])
       {
 
 #ifdef TRACE_LENGTH
-        // HOTSPOT TRACE PREDICTION STAT ///////////////////////////////////////////////////
+        // TRACE PREDICTION STAT ///////////////////////////////////////////////////////////
 
         if (current_trace != nullptr)
         {
 
           bool trace_br = getpred(current_trace->pred, current_trace_it);
           bool is_taken = it->getEdge()->isTakenPath();
-          bool is_predicated = predication[it->getSrcNode()->brNodeIndex()].then_length != 0;
+          bool is_predicated = predication[it->getSrcNode()->brNodeIndex()].branch_id != 0;
+          
           if (trace_br != is_taken && !is_predicated)
           {
             // if predicated, cannot be mispredicted
@@ -665,71 +667,83 @@ int main(int argc, char *argv[])
 
         // choose best pred /////
         char best_pred = 0;
-        char best_length = 0;
+        char best_length = 1;
 
-        for (int i = 0; i < TRACE_CACHE_SIZE; i++)
-        {
-
-          trace_t trace = trace_pred[PC][i];
-          if (trace.confidence < env_conf_evict)
-            continue;
-
-          // read the future //////
-          while (future_length < trace.length)
+        if (current_trace == nullptr) {
+          for (int i = 0; i < TRACE_CACHE_SIZE; i++)
           {
-            while (future_it != future_reader.end() && future_it->getSrcNode()->brClass().conditionality != bt9::BrClass::Conditionality::CONDITIONAL)
+
+            trace_t trace = trace_pred[PC][i];
+            if (trace.confidence < env_conf_evict)
+              continue;
+
+            // read the future //////
+            while (future_length < trace.length)
             {
-              ++future_it;
+              while (future_it != future_reader.end() && future_it->getSrcNode()->brClass().conditionality != bt9::BrClass::Conditionality::CONDITIONAL)
+              {
+                ++future_it;
+              }
+
+              if (future_it == future_reader.end())
+              {
+                future_cond_branch >>= (trace.length - future_length);
+                future_predication >>= (trace.length - future_length);
+                future_length = trace.length;
+                break;
+              }
+
+              future_cond_branch = updateGHR(future_cond_branch, future_it->getEdge()->isTakenPath());
+              future_predication = updateGHR(future_predication, predication[future_it->getSrcNode()->brNodeIndex()].branch_id > 0);
+              future_length++;
+              future_it++;
             }
 
-            if (future_it == future_reader.end())
-            {
-              future_cond_branch >>= (trace.length - future_length);
-              future_predication >>= (trace.length - future_length);
-              future_length = trace.length;
-              break;
+            // evaluate trace
+            int length = 0;
+            
+            while (length < trace.length ){
+              if (!getpred(future_predication, length + 32 - future_length))
+                if (getpred(trace.pred, length) != getpred(future_cond_branch, length + 32 - future_length))
+                  break;
+              length++;
             }
 
-            future_cond_branch = updateGHR(future_cond_branch, future_it->getEdge()->isTakenPath());
-            future_predication = updateGHR(future_predication, predication[future_it->getSrcNode()->brNodeIndex()].then_length > 0);
-            future_length++;
-            future_it++;
-          }
-
-          int length = 0;
-          while (length < trace.length && (getpred(future_predication, length + 32 - future_length) || getpred(trace.pred, length) == getpred(future_cond_branch, length + 32 - future_length)))
-            length++;
-
-          if (length > best_length)
-          {
-            best_pred = i + 1;
-            best_length = length;
+            if (length > best_length)
+            {
+              best_pred = i + 1;
+              best_length = length;
+            }
           }
         }
 
         future_length--;
+
+
         // PREDICTION //////////////////////////////////////////////////////////////////////
         bool predDir = false;
 
         predDir = brpred.GetPrediction(PC);
-        brpred.UpdatePredictor(PC, branchTaken, predDir, branchTarget);
+        brpred.UpdatePredictor(PC, branchTaken && best_pred==0, predDir, branchTarget);
 
         int branch_to = 0;
         float confidence = 0;
 
-        for (int i = 1; i <= TRACE_CACHE_SIZE; i++)
-        {
-          if (trace_pred[PC][i - 1].confidence < env_conf_evict)
-            continue;
-
-          bool predDir_bis = brpred.GetPrediction(PC + i);
-          float conf = brpred.getConfidence();
-          brpred.UpdatePredictor(PC, best_pred == i, predDir_bis, branchTarget);
-          numMispredTrace += predDir_bis && (best_pred != i);
-          if (predDir_bis && conf > confidence)
+        if (current_trace == nullptr) {
+          for (int i = 1; i <= TRACE_CACHE_SIZE; i++)
           {
-            branch_to = i;
-            confidence = conf;
+            if (trace_pred[PC][i - 1].confidence < env_conf_evict)
+              continue;
+
+            bool predDir_bis = brpred.GetPrediction(PC + i);
+            float conf = brpred.getConfidence();
+            brpred.UpdatePredictor(PC, best_pred == i, predDir_bis, branchTarget);
+            numMispredTrace += predDir_bis && (best_pred != i);
+            if (predDir_bis && conf > confidence)
+            {
+              branch_to = i;
+              confidence = conf;
+            }
           }
         }
 
@@ -744,7 +758,7 @@ int main(int argc, char *argv[])
         }
 
         numMispredTrace += predDir && (best_pred != 0); // said to take the first branch despite a trace was better
-        numMispred += predDir != branchTaken;
+        numMispred += predDir != (branchTaken && best_pred==0);
         // if (predDir != branchTaken)
         // {
         //   numMispred++; // update mispred stats
@@ -779,7 +793,6 @@ int main(int argc, char *argv[])
           trace_t new_trace;
           new_trace.confidence = 1.0;
 
-          bool useful = true;
           uint64_t trace_length_instr = 0;
 
           bool prepred_dir = branchTaken;
@@ -799,27 +812,23 @@ int main(int argc, char *argv[])
             prepred_dir = snd_pred.GetPrediction(pc_pred);
 
             bool is_block_predicated = false;
-            if (snd_pred.getConfidence() <= 0.7)
+            if (snd_pred.getConfidence() <= 0.6)
             { // predication processing
-            // printf("unconfident prediction \t");
-              if (predication[node_it->brNodeIndex()].then_length != 0)
+              if (predication[node_it->brNodeIndex()].branch_id != 0)
               {
-                // printf("predicated");
                 // add predication block to new_trace
                 is_block_predicated = true;
               }
               else
               {
-                // printf("is predicatable\t");
                 // IF block detection : forward conditional branch
                 // condition not heavily biaised => certainly data dependent => predication instead of prediction
                 bt9::BT9ReaderEdgeRecord *taken_edge = node_it.getNextEdge(true);
                 // length constraint ?
-                bool is_forward = taken_edge != nullptr && taken_edge->brVirtualTarget() > node_it->brVirtualAddr();// && taken_edge->brVirtualTarget() < node_it->brVirtualAddr() + PREDICATE_MAX_LENGTH;
+                bool is_forward = taken_edge != nullptr && taken_edge->brVirtualTarget() > node_it->brVirtualAddr() && taken_edge->brVirtualTarget() < node_it->brVirtualAddr() + PREDICATE_MAX_LENGTH;
 
                 if (is_forward)
                 {
-                  // printf("is forward\t");
                   // if paths end at the same point
                   bt9::BT9ReaderEdgeRecord *not_taken_edge = node_it.getNextEdge(false);
 
@@ -828,16 +837,25 @@ int main(int argc, char *argv[])
                     bt9::BT9Reader::NodeTableIterator pre_else_node(&bt9_reader, not_taken_edge->destNodeIndex());
                     bt9::BT9ReaderEdgeRecord *over_else_path = pre_else_node.getNextEdge(true);
 
-                    if (over_else_path != nullptr)
+                    bool if_block = not_taken_edge->destNodeIndex() == taken_edge->destNodeIndex();
+                    if (if_block) {
+                      is_block_predicated = true;
+                      global_predicated_nb ++;
+
+                      predicated_block_t predicate;
+                      predicate.branch_id = node_it->brNodeIndex();
+                      predicate.edge_id = taken_edge->edgeIndex();
+                      predicate.then_length = (taken_edge->brVirtualTarget() - node_it->brVirtualAddr()) / 4;
+                   
+                      predication[node_it->brNodeIndex()] = predicate;
+                    }
+                    else if (over_else_path != nullptr)
                     {
-                      bool if_block = not_taken_edge->destNodeIndex() == taken_edge->destNodeIndex();
                       bool if_else_block = !if_block && pre_else_node->brClassConditionalityIs("UCD") && over_else_path->destNodeIndex() == taken_edge->destNodeIndex();
 
-                      // printf("found edges%d %d %d %d\t", not_taken_edge->destNodeIndex(), taken_edge->destNodeIndex(), pre_else_node->brClassConditionalityIs("UCD"), over_else_path->destNodeIndex() == taken_edge->destNodeIndex());
                       // construct predication block
-                      if (if_block || if_else_block)
+                      if (if_else_block)
                       {
-                        // printf("is if or ifelse");
                         is_block_predicated = true;
                         global_predicated_nb ++;
 
@@ -845,19 +863,17 @@ int main(int argc, char *argv[])
                         predicate.branch_id = node_it->brNodeIndex();
                         predicate.edge_id = taken_edge->edgeIndex();
                         predicate.then_length = (taken_edge->brVirtualTarget() - node_it->brVirtualAddr()) / 4;
-                        if (if_else_block)
-                        {
-                          predicate.over_else_edge_id = over_else_path->edgeIndex();
-                          predicate.has_else = true;
-                          predicate.else_length = (over_else_path->brVirtualTarget() - pre_else_node->brVirtualAddr() / 4);
-                        }
+                       
+                        predicate.over_else_edge_id = over_else_path->edgeIndex();
+                        predicate.has_else = true;
+                        predicate.else_length = (over_else_path->brVirtualTarget() - pre_else_node->brVirtualAddr() / 4);
+                        
                         predication[node_it->brNodeIndex()] = predicate;
                       }
-                    }
+                    } 
                   }
                 }
               }
-              // printf("\n");
             }
 
             int next_edge = node_it.nextConditionalNode(prepred_dir);
@@ -867,10 +883,12 @@ int main(int argc, char *argv[])
               // therefore unpredictible
 
               // or too many instruction in trace
+
               break; // stops construction
             }
 
-            new_trace.confidence *= snd_pred.getConfidence();
+            if (!is_block_predicated)
+              new_trace.confidence *= snd_pred.getConfidence();
             // new_trace.cond_br[i] = (unsigned)next_edge;
             new_trace.pred |= prepred_dir << i;
 
@@ -882,6 +900,7 @@ int main(int argc, char *argv[])
                 overhead = predication[node_it->brNodeIndex()].else_length;
             }
 
+            global_overhead += overhead;
             new_trace.block_length[i] = node_it.getPathInstrucCount() + overhead;
             trace_length_instr += node_it.getPathInstrucCount() + overhead;
             new_trace.length = i + 1;
@@ -899,7 +918,7 @@ int main(int argc, char *argv[])
 
             bool already_here = false;
             for (int i = 0; i < TRACE_CACHE_SIZE; i++)
-              if (new_trace == trace_pred[targetID][trace_evict_id])
+              if (new_trace == trace_pred[targetID][i])
                 already_here = true;
             if (already_here)
             {
@@ -909,6 +928,7 @@ int main(int argc, char *argv[])
             else
             {
               global_nb_unused_trace += (trace_pred[targetID][trace_evict_id].confidence > 0 && trace_pred[targetID][trace_evict_id].count_use == 0);
+              global_trace_evicted ++;
               // insertion
               new_trace.nb_instr_tot = trace_length_instr;
               trace_pred[targetID][trace_evict_id] = new_trace;
@@ -952,15 +972,14 @@ int main(int argc, char *argv[])
       if (current_trace != nullptr)
       {
         predicated_block_t block = predication[it->getSrcNode()->brNodeIndex()];
-        if (block.then_length > 0)
+        if (block.branch_id > 0)
         {
           // execute predicated block
-          trace_instruction_counter += block.then_length + block.else_length + 1;
           bool taken_path = it->getEdge()->isTakenPath();
           total_instruction_counter_bis += block.then_length * !taken_path + block.else_length * taken_path;
         }
-        else
-          trace_instruction_counter += it->getEdge()->nonBrInstCnt() + 1;
+
+        trace_instruction_counter += it->getEdge()->nonBrInstCnt() + 1;
       }
 
       /************************************************************************************************************/
@@ -1029,16 +1048,14 @@ int main(int argc, char *argv[])
 
   unordered_map<uint64_t, trace_t[3]>::iterator traces = trace_pred.begin();
   // long long unsigned int trace_instr_exec = 0;
-  uint32_t nb_nonnull_trace = 0;
-  uint32_t nb_cache_entry = 0;
+  uint32_t nb_nonnull_trace_cache = 0;
   while (traces != trace_pred.end())
   {
-    nb_cache_entry++;
+    nb_nonnull_trace_cache += traces->second[0].confidence > 0;
     for (int it_trace = 0; it_trace < TRACE_CACHE_SIZE; it_trace++)
     {
       if (traces->second[it_trace].count_use == 0 && traces->second[it_trace].confidence > 0)
         global_nb_unused_trace++;
-      nb_nonnull_trace += traces->second[it_trace].confidence > 0;
 #ifdef PRINT_TRACES
       printf("    TRACE Ox%016lx \t", it_trace->trace_id);
       // for (int i = 0; i < it_trace->length; i++)
@@ -1066,7 +1083,7 @@ int main(int argc, char *argv[])
   { // just in case ...
     prec_display = (double)(global_trace_precision) / (double)(global_trace_use);
     instr_display = (double)(global_trace_instr_nb) / (double)(global_nb_trace);
-    aver_nb_trace_cache = (double)(nb_nonnull_trace) / (double)(nb_cache_entry);
+    aver_nb_trace_cache = (double)(global_nb_trace) / (double)(nb_nonnull_trace_cache);
   }
 
   printf("  TRACE_NUMBER                \t : %10ld\n", (global_nb_trace));
@@ -1075,6 +1092,7 @@ int main(int argc, char *argv[])
   printf("  CONSTRUCTION_FAILS_SIZE     \t : %10d\n", count_fail_size);
   printf("  CONSTRUCTION_FAILS_HERE     \t : %10d\n", count_fail_already_here);
   printf("  HOTSPOT_EVICTION            \t : %10ld\n", hotspot_eviction);
+  printf("  TRACE_EXECUTION             \t : %10lld\n", global_trace_use);
   if (!trace_pred.empty())
   {
     printf("  MEAN_TRACE_INSTRUCTION      \t : %10.2f\n", instr_display);
@@ -1085,6 +1103,7 @@ int main(int argc, char *argv[])
   }
   printf("  PREDICATE_EXEC_INSTR        \t : %10lld\n", global_predicated_instr_nb);
   printf("  PREDICATE_BLOCK             \t : %10lld\n", global_predicated_nb);
+  printf("  PREDICATE_OVERHEAD          \t : %10ld\n", global_overhead);
   printf("  PREDICATE_EXEC_INSTR_RATE   \t : %10.6f\n", (double)global_predicated_instr_nb/ (double)total_instruction_counter_bis);
   
 #endif
