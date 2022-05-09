@@ -43,6 +43,7 @@ typedef uint16_t hotspot_t;
 
 #define TRACE_CACHE_SIZE 3       // because we only have three address between two instruction addresses
 #define PREDICATE_MAX_LENGTH 256 // bytes -> 64 instructions
+#define PREDICATE_CONF_THRES 0.7 
 
 typedef struct
 {
@@ -306,10 +307,17 @@ int main(int argc, char *argv[])
   }
 
   double env_conf_evict = TRACE_CONF_EVICT;
-  env_read = getenv("TRACE_CONF_THRES");
+  env_read = getenv("TRACE_CONF_EVICT");
   if (env_read != nullptr)
   {
     env_conf_evict = stod(env_read);
+  }
+
+  double env_predicate_conf = PREDICATE_CONF_THRES;
+  env_read = getenv("PREDICATE_CONF_THRES");
+  if (env_read != nullptr)
+  {
+    env_predicate_conf = stod(env_read);
   }
 
   ///////////////////////////////////////////////
@@ -812,7 +820,7 @@ int main(int argc, char *argv[])
             prepred_dir = snd_pred.GetPrediction(pc_pred);
 
             bool is_block_predicated = false;
-            if (snd_pred.getConfidence() <= 0.7)
+            if (snd_pred.getConfidence() <= env_predicate_conf)
             { // predication processing
               if (predication[node_it->brNodeIndex()].branch_id != 0)
               {
@@ -894,13 +902,12 @@ int main(int argc, char *argv[])
 
             uint32_t overhead = 0;
             if (is_block_predicated) {
-              if (prepred_dir)
-                overhead = predication[node_it->brNodeIndex()].then_length;
-              else
+              if (branchTaken)
                 overhead = predication[node_it->brNodeIndex()].else_length;
+              else
+                overhead = predication[node_it->brNodeIndex()].then_length;
             }
 
-            global_overhead += overhead;
             new_trace.block_length[i] = node_it.getPathInstrucCount() + overhead;
             trace_length_instr += node_it.getPathInstrucCount() + overhead;
             new_trace.length = i + 1;
@@ -971,15 +978,19 @@ int main(int argc, char *argv[])
       // count in-trace-executed instructions
       if (current_trace != nullptr)
       {
+        uint32_t overhead = 0;
+        
         predicated_block_t block = predication[it->getSrcNode()->brNodeIndex()];
         if (block.branch_id > 0)
         {
           // execute predicated block
           bool taken_path = it->getEdge()->isTakenPath();
-          total_instruction_counter_bis += block.then_length * !taken_path + block.else_length * taken_path;
+          overhead = block.then_length * !taken_path + block.else_length * taken_path;
+          total_instruction_counter_bis += overhead;
+          global_overhead += overhead;
         }
 
-        trace_instruction_counter += it->getEdge()->nonBrInstCnt() + 1;
+        trace_instruction_counter += it->getEdge()->nonBrInstCnt() + 1 + overhead;
       }
 
       /************************************************************************************************************/
@@ -1104,7 +1115,7 @@ int main(int argc, char *argv[])
   printf("  PREDICATE_EXEC_INSTR        \t : %10lld\n", global_predicated_instr_nb);
   printf("  PREDICATE_BLOCK             \t : %10lld\n", global_predicated_nb);
   printf("  PREDICATE_OVERHEAD          \t : %10ld\n", global_overhead);
-  printf("  PREDICATE_EXEC_INSTR_RATE   \t : %10.6f\n", (double)global_predicated_instr_nb/ (double)total_instruction_counter_bis);
+  printf("  PREDICATE_EXEC_INSTR_RATE   \t : %10.6f\n", (double)global_overhead/ (double)total_instruction_counter_bis);
   
 #endif
 

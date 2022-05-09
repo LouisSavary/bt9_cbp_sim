@@ -6,8 +6,8 @@
 
 require ( "./bench_list.pl");
 
-$statsize  = 11;
-my @stat   = ("MISPRED_PER_1K_INST", "MEAN_TRACE_PRECISION", "MEAN_TRACE_USAGE", "MEAN_TRACE_INSTRUCTION", "TRACE_NUMBER", "CONSTRUCTION_FAILS", "UNUSED_TRACE_PER", "OVERLAP_COEF", "NUM_BR", "PREDICATE_BLOCK", "PREDICATE_EXEC_INSTR_RATE");
+$statsize  = 12;
+my @stat   = ("MISPRED_PER_1K_INST", "MEAN_TRACE_PRECISION", "MEAN_TRACE_USAGE", "MEAN_TRACE_INSTRUCTION", "TRACE_NUMBER", "CONSTRUCTION_FAILS", "UNUSED_TRACE_PER", "OVERLAP_COEF", "NUM_BR", "PREDICATE_BLOCK", "PREDICATE_EXEC_INSTR_RATE", "PREDICATE_OVERHEAD");
 # $statscnd  = "MEAN_TRACE_PRECISION";
 # $statthrd  = "MEAN_TRACE_USAGE";
 $wsuite    = "all";
@@ -255,6 +255,9 @@ sub print_amean{
         print_val();
         printf("\n%-20s\t", "AMEAN PREDICATE USAGE");
         $val = $dir_sums[$dirnum][10]/$num_w;
+        print_val();
+        printf("\n%-20s\t", "AMEAN PREDICATE OVERHEAD");
+        $val = $dir_sums[$dirnum][11]/$num_w;
         print_val();
 
     }
