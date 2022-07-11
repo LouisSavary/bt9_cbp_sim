@@ -14,8 +14,6 @@ $SUITES{'workbench'} =
 '2mm
 3mm
 adi
-adpcm_decode
-adpcm_encode
 atax
 bicg
 cholesky
@@ -24,27 +22,17 @@ covariance
 deriche
 doitgen
 durbin
-epic_decode
-epic_encode
 fdtd-2d
 floyd-warshall
-g721_decode
-g721_encode
 gemm
 gemver
 gesummv
 gramschmidt
-gsm_decode
-gsm_encode
 heat-3d
 jacobi-1d
 jacobi-2d
-jpeg_decode
-jpeg_encode
 lu
 ludcmp
-mpeg2_decode
-mpeg2_encode
 mvt
 nussinov
 seidel-2d
@@ -52,7 +40,19 @@ symm
 syr2k
 syrk
 trisolv
-trmm';
+trmm
+adpcm_decode
+adpcm_encode
+epic_decode
+epic_encode
+g721_decode
+g721_encode
+gsm_decode
+gsm_encode
+jpeg_decode
+jpeg_encode
+mpeg2_decode
+mpeg2_encode';
 
 $SUITES{'eval'} = 
 'LONG_MOBILE-10

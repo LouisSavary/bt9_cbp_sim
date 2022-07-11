@@ -28,14 +28,14 @@ using namespace std;
 typedef uint16_t hotspot_t;
 #define HOTSPOT_OFFSET 4
 #define HOTSPOT_ASSOCIATIVITY 4
-#define HOTSPOT_AVERAGE_MAX 256 //?
+#define HOTSPOT_AVERAGE_MAX 512 //?
 #define GHR_LENGTH 6
 
 // #define PRINT_HOTSPOT
 // #define PRINT_TRACES
 #define PREDICT_TRACE
 #define TRACE_LENGTH 6
-#define TRACE_PRED_TRIG_THRES 64
+#define TRACE_PRED_TRIG_THRES 32
 #define TRACE_INST_LENG_THRES 32
 #define TRACE_INST_LENG_MAX 512
 #define TRACE_CONF_THRES 0.6
@@ -612,8 +612,8 @@ int main(int argc, char *argv[])
       {
         if (it->getSrcNode()->brNodeIndex())
         { // only fault if it isn't the first node in the graph (fake branch)
-          fprintf(stderr, "%s: OPTYPE_ERROR\n", trace_path.c_str());
-          printf("%s: OPTYPE_ERROR\n", trace_path.c_str());
+          fprintf(stderr, "%s: OPTYPE_ERROR : %d\n", trace_path.c_str(), it->getSrcNode()->brNodeIndex());
+          printf("%s: OPTYPE_ERROR : %d\n", trace_path.c_str(), it->getSrcNode()->brNodeIndex());
           exit(-1); // this should never happen, if it does please email CBP org chair.
         }
       }
@@ -640,7 +640,9 @@ int main(int argc, char *argv[])
             // update trace
             current_trace->confidence *= 1.0 - 1.0 / (double)(1 << (current_trace_it));
 
-            // if (current_trace->confidence < TRACE_CONF_EVICT) {  //evict : not relevant ?
+            // if (current_trace->confidence < TRACE_CONF_EVICT && current_trace_it>1) {  //evict : not relevant ?
+            // //   global_trace_evicted ++;
+            // // }
             //   uint64_t key = (current_trace->trace_id >> HOTSPOT_OFFSET) & mask64(HOTSPOT_KEY_SIZE);
             //   trace_pred[key].remove(*current_trace);
             //   global_trace_evicted ++;
@@ -659,7 +661,7 @@ int main(int argc, char *argv[])
             }
 
             // trace_instruction_counter += current_trace->block_length[current_trace_it];
-            current_trace->confidence += (1.0f - current_trace->confidence) / (float)(1 << current_trace_it) * !is_predicated;
+            current_trace->confidence += ((float)(1.0f - current_trace->confidence) / (float)(1 << (current_trace_it))) * (float)(!is_predicated);
             global_trace_precision += ((double)current_trace->block_length[current_trace_it]) / (double)current_trace->nb_instr_tot;
             current_trace_it++;
             if (current_trace_it >= current_trace->length)
@@ -846,6 +848,8 @@ int main(int argc, char *argv[])
                     bt9::BT9ReaderEdgeRecord *over_else_path = pre_else_node.getNextEdge(true);
 
                     bool if_block = not_taken_edge->destNodeIndex() == taken_edge->destNodeIndex();
+
+                    // construct *if* predication block
                     if (if_block) {
                       is_block_predicated = true;
                       global_predicated_nb ++;
@@ -861,7 +865,7 @@ int main(int argc, char *argv[])
                     {
                       bool if_else_block = !if_block && pre_else_node->brClassConditionalityIs("UCD") && over_else_path->destNodeIndex() == taken_edge->destNodeIndex();
 
-                      // construct predication block
+                      // construct *if_else* predication block
                       if (if_else_block)
                       {
                         is_block_predicated = true;
@@ -925,8 +929,10 @@ int main(int argc, char *argv[])
 
             bool already_here = false;
             for (int i = 0; i < TRACE_CACHE_SIZE; i++)
-              if (new_trace == trace_pred[targetID][i])
+              if (new_trace == trace_pred[targetID][i]){
+                // trace_pred[targetID][i].confidence = new_trace.confidence;
                 already_here = true;
+              }
             if (already_here)
             {
               count_fail_already_here++;
@@ -935,7 +941,7 @@ int main(int argc, char *argv[])
             else
             {
               global_nb_unused_trace += (trace_pred[targetID][trace_evict_id].confidence > 0 && trace_pred[targetID][trace_evict_id].count_use == 0);
-              global_trace_evicted ++;
+              // global_trace_evicted ++;
               // insertion
               new_trace.nb_instr_tot = trace_length_instr;
               trace_pred[targetID][trace_evict_id] = new_trace;
@@ -986,6 +992,7 @@ int main(int argc, char *argv[])
           // execute predicated block
           bool taken_path = it->getEdge()->isTakenPath();
           overhead = block.then_length * !taken_path + block.else_length * taken_path;
+          
           total_instruction_counter_bis += overhead;
           global_overhead += overhead;
         }
@@ -1098,6 +1105,7 @@ int main(int argc, char *argv[])
   }
 
   printf("  TRACE_NUMBER                \t : %10ld\n", (global_nb_trace));
+  printf("  TRACE_EVICTED               \t : %10ld\n", (global_trace_evicted));
   printf("  CONSTRUCTION_FAILS          \t : %10d\n", count_fail);
   printf("  CONSTRUCTION_FAILS_CONF     \t : %10d\n", count_fail_conf);
   printf("  CONSTRUCTION_FAILS_SIZE     \t : %10d\n", count_fail_size);
