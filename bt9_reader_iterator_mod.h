@@ -295,13 +295,11 @@ namespace bt9
                                                         edge_table(this),
                                                         tracefile_name_(name),
                                                         fpstream_(openBT9TraceFile_(tracefile_name_), boost::iostreams::close_handle),
-                                                        pinfile_(&fpstream_),
-                                                        buffer_(buffer_size)
+                                                        pinfile_(&fpstream_)
         {
             readBT9Header_();
             readBT9NodeTable_();
             readBT9EdgeTable_();
-            initBT9EdgeSeqListAccessWindow_();
         }
 
         BT9Reader() = delete;
@@ -353,16 +351,6 @@ namespace bt9
                 return branch_target;
             }
 
-            BT9ReaderEdgeRecord* getNextEdge(bool taken) {
-                BT9ReaderNodeRecord node = this->operator*();
-                std::list<BT9ReaderEdgeRecord> edge_list = bt9_reader_->edge_hash_table.find(node.brVirtualAddr())->second;
-                std::list<BT9ReaderEdgeRecord>::iterator it;
-                for (it = edge_list.begin(); it != edge_list.end(); it++)
-                    if (it->isTakenPath() == taken)
-                        return bt9_reader_->edge_order_vector_.at(it->edgeIndex());
-                return nullptr;
-            }
-
             /// move in the graph by taking a branch
             /// return the first taken conditional branch
             /// set index_ before the next conditional branch
@@ -372,29 +360,41 @@ namespace bt9
                 BT9ReaderNodeRecord node = this->operator*();
                 bool conditional = node.brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
                 bool direct = node.brClass().directness == BrClass::Directness::DIRECT;
-                int cond_path = -1;
+                int cond_path = -2;
                 path_instr_count = 0;
                 branch_target = 0;
 
                 // start on a conditional branch, otherwise it is either indirect or ended
                 if (!conditional)
-                    return -1;
+                    return -2;
 
                 // else  find a conditional branch that starts from node
-                std::list<BT9ReaderEdgeRecord> edgelist;
-                std::list<BT9ReaderEdgeRecord>::const_iterator edge_it;
-                std::list<BT9ReaderEdgeRecord>::const_iterator edge_end;
+                std::list<BT9ReaderEdgeRecord> edgelist = bt9_reader_->edge_hash_table.find(node.brVirtualAddr())->second;
+                std::list<BT9ReaderEdgeRecord>::const_iterator edge_it = edgelist.begin();
+                std::list<BT9ReaderEdgeRecord>::const_iterator edge_end = edgelist.end();
 
-                auto edge = getNextEdge(taken);
-                if (edge == nullptr)
-                    return -1;
-                
-                cond_path = edge->edgeIndex();
-                index_ = edge->destNodeIndex();
-                path_instr_count = (edge->nonBrInstCnt()) + 1;
-                branch_target = edge->brVirtualTarget();
+                while (edge_it != edge_end)
+                {
+                    if (edge_it->srcNodeIndex() == index_)
+                    {
+                        if (edge_it->isTakenPath() == taken)
+                        {
+                            cond_path = edge_it->edgeIndex();
+                            index_ = edge_it->destNodeIndex();
+                            path_instr_count = (edge_it->nonBrInstCnt()) + 1;
+                            branch_target = edge_it->brVirtualTarget();
+                            break;
+                        }
+                    }
+                    ++edge_it;
+                }
 
-       
+                if (cond_path == -2)
+                {
+                    // no branch found -> broken path
+                    return -2;
+                }
+
                 // path to the next conditional br
                 conditional = this->operator*().brClass().conditionality == BrClass::Conditionality::CONDITIONAL;
                 direct = this->operator*().brClass().directness == BrClass::Directness::DIRECT;
@@ -408,11 +408,12 @@ namespace bt9
                     {
                         if (edge_it->srcNodeIndex() == index_)
                         {
-                            if (edge_it->destNodeIndex() == index_){
-                                //cycle because unconditional and direct by the outter while condition
+                            if (edge_it->destNodeIndex() == index_)
+                            {
+                                // cycle because unconditional and direct by the outter while condition
                                 ++edge_it;
                                 continue;
-                            } 
+                            }
                             // direct and unconditional by the outter while condition
                             index_ = edge_it->destNodeIndex();
                             path_instr_count += edge_it->nonBrInstCnt() + 1;
@@ -869,7 +870,8 @@ namespace bt9
              * It's constructed to be an end iterator by default if no BT9Reader is provided
              */
             BranchInstanceIterator() : bt9_reader_(nullptr),
-                                       reach_end_(true)
+                                       reach_end_(true),
+                                       pinfile_(nullptr)
             {
             }
 
@@ -880,8 +882,13 @@ namespace bt9
              */
             BranchInstanceIterator(BT9Reader *rd,
                                    bool end = false) : bt9_reader_(rd),
-                                                       reach_end_(end)
+                                                       reach_end_(end),
+                                                       buffer_(1024),
+                                                       fpstream(bt9_reader_->openBT9TraceFile_(bt9_reader_->tracefile_name_), boost::iostreams::close_handle),
+                                                       pinfile_(&fpstream)
             {
+                bt9_reader_->initBT9EdgeSeqListAccessWindow_(*this);
+                
             }
 
             /*!
@@ -891,7 +898,12 @@ namespace bt9
             BranchInstanceIterator(const BranchInstanceIterator &rhs) : bt9_reader_(rhs.bt9_reader_),
                                                                         reach_end_(rhs.reach_end_),
                                                                         index_(rhs.index_),
-                                                                        br_inst_(rhs.br_inst_)
+                                                                        br_inst_(rhs.br_inst_),
+                                                                        buffer_(rhs.buffer_),
+                                                                        buffer_begin_(rhs.buffer_begin_),
+                                                                        buffer_end_(rhs.buffer_end_),
+                                                                        reach_eof_(rhs.reach_eof_),
+                                                                        pinfile_(&bt9_reader_->fpstream_)
             {
             }
 
@@ -902,7 +914,12 @@ namespace bt9
             BranchInstanceIterator(BranchInstanceIterator &&rhs) : bt9_reader_(rhs.bt9_reader_),
                                                                    reach_end_(rhs.reach_end_),
                                                                    index_(rhs.index_),
-                                                                   br_inst_(rhs.br_inst_)
+                                                                   br_inst_(rhs.br_inst_),
+                                                                   buffer_(rhs.buffer_),
+                                                                   buffer_begin_(rhs.buffer_begin_),
+                                                                   buffer_end_(rhs.buffer_end_),
+                                                                   reach_eof_(rhs.reach_eof_),
+                                                                   pinfile_(&bt9_reader_->fpstream_)
             {
             }
 
@@ -915,10 +932,7 @@ namespace bt9
                 bt9_reader_ = rhs.bt9_reader_;
                 reach_end_ = rhs.reach_end_;
                 index_ = rhs.index_;
-                br_inst_.dest_node_rec_ptr_ = rhs.br_inst_.dest_node_rec_ptr_;
-                br_inst_.edge_rec_ptr_ = rhs.br_inst_.edge_rec_ptr_;
-                br_inst_.src_node_rec_ptr_ = rhs.br_inst_.src_node_rec_ptr_;
-                br_inst_.valid_ = rhs.br_inst_.valid_;
+                br_inst_ = rhs.br_inst_;
 
                 return *this;
             }
@@ -937,7 +951,7 @@ namespace bt9
                 br_inst_.invalidate_();
                 if (!reach_end_)
                 {
-                    reach_end_ = !bt9_reader_->moveToNextEdgeSeqListEntry_(index_);
+                    reach_end_ = !bt9_reader_->moveToNextEdgeSeqListEntry_(*this, index_);
                 }
 
                 return *this;
@@ -956,7 +970,7 @@ namespace bt9
                 br_inst_.invalidate_();
                 if (!reach_end_)
                 {
-                    reach_end_ = !bt9_reader_->moveToNextEdgeSeqListEntry_(index_);
+                    reach_end_ = !bt9_reader_->moveToNextEdgeSeqListEntry_(*this, index_);
                 }
 
                 return *this;
@@ -998,7 +1012,7 @@ namespace bt9
             {
                 if (!br_inst_.isValid())
                 {
-                    bt9_reader_->loadBT9BranchInstance_(index_, br_inst_);
+                    bt9_reader_->loadBT9BranchInstance_(*this, index_, br_inst_);
                 }
 
                 return br_inst_;
@@ -1012,7 +1026,7 @@ namespace bt9
             {
                 if (!br_inst_.isValid())
                 {
-                    bt9_reader_->loadBT9BranchInstance_(index_, br_inst_);
+                    bt9_reader_->loadBT9BranchInstance_(*this, index_, br_inst_);
                 }
 
                 return &br_inst_;
@@ -1023,6 +1037,22 @@ namespace bt9
             bool reach_end_ = false;
             uint64_t index_ = 0;
             BT9BranchInstance br_inst_;
+boost::iostreams::stream_buffer<boost::iostreams::file_descriptor_source> fpstream;
+        public:
+            /// Indicate if reading stream reaches end of file
+            bool reach_eof_ = false;
+
+            /// BT9 reader istream handle
+            std::istream pinfile_;
+
+            /// BT9 reader edge sequence list access window
+            std::vector<uint32_t> buffer_;
+
+            /// Index of edge sequence entry that is currently the first entry of access window
+            uint64_t buffer_begin_ = 0;
+
+            /// Index of edge sequence entry that is currently the last entry of access window
+            uint64_t buffer_end_ = 0;
         };
 
         BranchInstanceIterator begin() { return BranchInstanceIterator(this); }
@@ -1037,7 +1067,6 @@ namespace bt9
 
         /// Edge table (wrapper class for the internal edge table) that is visible to the user
         EdgeTable edge_table;
-
 
     private:
         /*!
@@ -1551,8 +1580,7 @@ namespace bt9
                     parseEdgeRecordOptionalFields_(edge_record, ss, token);
                     updateEdgeTable_(edge_record);
 
-                    // recouv_coef += (double)(edge_record.nonBrInstCnt() * edge_record.observedTraverseCnt());
-                    recouv_coef += (double)(edge_record.observedTraverseCnt());
+                    recouv_coef += (double)(edge_record.nonBrInstCnt() * edge_record.observedTraverseCnt());
                     nb_edge++;
                     max_id = std::max(max_id, edge_record.id_);
                 }
@@ -1562,7 +1590,7 @@ namespace bt9
                     exit(-1);
                 }
             }
-            printf("OVERLAP_COEF \t: %16.4lf\n", recouv_coef/((double)nb_edge));
+            printf("OVERLAP_COEF \t: %16.4lf\n", recouv_coef / ((double)nb_edge));
             // Update edge order vector
             updateEdgeOrderVector_(++max_id);
         }
@@ -1787,12 +1815,12 @@ namespace bt9
          * \param token The next line inside edge sequence list
          * \note It automatically filters out those lines that may contain comments only
          */
-        void readNextNonCommentLine_(std::string &token)
+        void readNextNonCommentLine_(BranchInstanceIterator &it, std::string &token)
         {
             std::string line;
             do
             {
-                if (!std::getline(pinfile_, line, '\n'))
+                if (!std::getline(it.pinfile_, line, '\n'))
                 {
                     break;
                 }
@@ -1819,11 +1847,11 @@ namespace bt9
          * \note It throws std::invalid_argument exception if the readout edge sequence list
          *       entry is invalid.
          */
-        bool readNextEdgeSequenceListEntry_(uint32_t &edge_id)
+        bool readNextEdgeSequenceListEntry_(BranchInstanceIterator &it, uint32_t &edge_id)
         {
             std::string token;
 
-            readNextNonCommentLine_(token);
+            readNextNonCommentLine_(it, token);
 
             if (!token.empty() && token != "EOF")
             {
@@ -1856,7 +1884,7 @@ namespace bt9
          * \brief Initialize BT9 edge sequence list access window
          * \note The window size can be configured when BT9Reader instance is constructed.
          */
-        void initBT9EdgeSeqListAccessWindow_()
+        void initBT9EdgeSeqListAccessWindow_(BranchInstanceIterator &it)
         {
             if (!reach_edge_seq_list_)
             {
@@ -1864,18 +1892,18 @@ namespace bt9
                 exit(-1);
             }
 
-            uint64_t buffer_size = buffer_.size();
-            while (buffer_end_ < buffer_begin_ + buffer_size)
+            uint64_t buffer_size = it.buffer_.size();
+            while (it.buffer_end_ < it.buffer_begin_ + buffer_size)
             {
                 uint32_t edge_id = 0;
-                if (!readNextEdgeSequenceListEntry_(edge_id))
+                if (!readNextEdgeSequenceListEntry_(it, edge_id))
                 {
-                    reach_eof_ = true;
+                    it.reach_eof_ = true;
                     break;
                 }
 
-                buffer_[buffer_end_ % buffer_size] = edge_id;
-                buffer_end_++;
+                it.buffer_[it.buffer_end_ % buffer_size] = edge_id;
+                it.buffer_end_++;
             }
         }
 
@@ -1883,23 +1911,23 @@ namespace bt9
          * \brief Shift BT9 edge sequence list access window foward
          * \note Forward shifting stride is half buffer size
          */
-        void shiftBT9EdgeSeqListAccessWindow_()
+        void shiftBT9EdgeSeqListAccessWindow_(BranchInstanceIterator &it)
         {
-            assert(!reach_eof_);
+            assert(!it.reach_eof_);
 
-            uint64_t buffer_size = buffer_.size();
-            buffer_begin_ += (buffer_size >> 1);
-            while (buffer_end_ < buffer_begin_ + buffer_size)
+            uint64_t buffer_size = it.buffer_.size();
+            it.buffer_begin_ += (buffer_size >> 1);
+            while (it.buffer_end_ < it.buffer_begin_ + buffer_size)
             {
                 uint32_t edge_id = 0;
-                if (!readNextEdgeSequenceListEntry_(edge_id))
+                if (!readNextEdgeSequenceListEntry_(it, edge_id))
                 {
-                    reach_eof_ = true;
+                    it.reach_eof_ = true;
                     break;
                 }
 
-                buffer_[buffer_end_ % buffer_size] = edge_id;
-                buffer_end_++;
+                it.buffer_[it.buffer_end_ % buffer_size] = edge_id;
+                it.buffer_end_++;
             }
         }
 
@@ -1908,19 +1936,19 @@ namespace bt9
          * \param idx The iterator access index
          * \return Returns false if the iterator reaches the end of file
          */
-        bool moveToNextEdgeSeqListEntry_(uint64_t &idx)
+        bool moveToNextEdgeSeqListEntry_(BranchInstanceIterator &it, uint64_t &idx)
         {
             idx++;
 
-            if (idx >= buffer_end_)
+            if (idx >= it.buffer_end_)
             {
-                if (reach_eof_)
+                if (it.reach_eof_)
                 {
                     return false;
                 }
                 else
                 {
-                    shiftBT9EdgeSeqListAccessWindow_();
+                    shiftBT9EdgeSeqListAccessWindow_(it);
                 }
             }
 
@@ -1932,14 +1960,14 @@ namespace bt9
          * \param idx The iterator access index
          * \note It throws std::out_of_range exception if either overflow or underflow occurs
          */
-        void edgeSeqListAccessIndexBoundChecking_(const uint64_t &idx)
+        void edgeSeqListAccessIndexBoundChecking_(BranchInstanceIterator &it, const uint64_t &idx)
         {
-            if (idx < buffer_begin_)
+            if (idx < it.buffer_begin_)
             {
                 throw std::out_of_range("Edge sequence list access window underflow!\n");
             }
 
-            if (reach_eof_ && (idx >= buffer_end_))
+            if (it.reach_eof_ && (idx >= it.buffer_end_))
             {
                 throw std::out_of_range("Edge sequence list access window overflow!\n");
             }
@@ -1949,9 +1977,9 @@ namespace bt9
          * \brief Helper function provided by BT9Reader to get the edge sequence list entry
          * \param idx The iterator access index
          */
-        const uint32_t &getEdgeSeqListEntry_(const uint64_t &idx)
+        const uint32_t &getEdgeSeqListEntry_(BranchInstanceIterator &it, const uint64_t &idx)
         {
-            return buffer_[idx % buffer_.size()];
+            return it.buffer_[idx % it.buffer_.size()];
         }
 
         /*!
@@ -1960,11 +1988,11 @@ namespace bt9
          * \param idx The iterator access index
          * \param br_inst The branch instance bufferred inside the iterator
          */
-        void loadBT9BranchInstance_(const uint64_t &idx, BT9BranchInstance &br_inst)
+        void loadBT9BranchInstance_(BranchInstanceIterator &it, const uint64_t &idx, BT9BranchInstance &br_inst)
         {
-            edgeSeqListAccessIndexBoundChecking_(idx);
+            edgeSeqListAccessIndexBoundChecking_(it, idx);
 
-            const auto &edge_id = getEdgeSeqListEntry_(idx);
+            const auto &edge_id = getEdgeSeqListEntry_(it, idx);
             const auto &edge_rec_ptr = edge_order_vector_[edge_id];
             const auto &src_node_rec_ptr = node_order_vector_[edge_rec_ptr->src_node_id_];
             const auto &dest_node_rec_ptr = node_order_vector_[edge_rec_ptr->dest_node_id_];
@@ -2019,7 +2047,7 @@ namespace bt9
 
         /// BT9 internal node look-up table
         std::unordered_map<NodeTableHashKey, BT9ReaderNodeRecord> node_table_;
-        
+
         /// BT9 internal node id tracking table
         std::vector<BT9ReaderNodeRecord *> node_order_vector_;
 
@@ -2029,7 +2057,7 @@ namespace bt9
         /// BT9 internal edge look-up table
         std::unordered_map<EdgeTableHashKey, BT9ReaderEdgeRecord> edge_table_;
         std::unordered_map<uint64_t, std::list<BT9ReaderEdgeRecord>> edge_hash_table;
-        
+
         /// BT9 internal edge id tracking table
         std::vector<BT9ReaderEdgeRecord *> edge_order_vector_;
 
@@ -2039,23 +2067,11 @@ namespace bt9
         /// Indicate if reading stream reaches edge sequence list
         bool reach_edge_seq_list_ = false;
 
-        /// Indicate if reading stream reaches end of file
-        bool reach_eof_ = false;
-
         /// Boost iostreams stream buffer that could be constructed from a file descriptor
         boost::iostreams::stream_buffer<boost::iostreams::file_descriptor_source> fpstream_;
 
         /// BT9 reader istream handle
         std::istream pinfile_;
-
-        /// BT9 reader edge sequence list access window
-        std::vector<uint32_t> buffer_;
-
-        /// Index of edge sequence entry that is currently the first entry of access window
-        uint64_t buffer_begin_ = 0;
-
-        /// Index of edge sequence entry that is currently the last entry of access window
-        uint64_t buffer_end_ = 0;
     };
 
     /*!

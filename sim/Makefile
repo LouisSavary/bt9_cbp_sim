@@ -37,6 +37,7 @@ endif
 
 
 export CBP_BASE := $(CURDIR)/..
+# CXX := clang++
 CXX := g++
 
 OBJDIR := $(CBP_BASE)/bin
@@ -45,6 +46,7 @@ VPATH  := $(SRC)
 
 LDLIBS   += -lboost_iostreams
 
+# LDFLAGS += -fuse-ld=lld -L$(BOOST)/lib -Wl,-rpath $(BOOST)/lib
 LDFLAGS += -L$(BOOST)/lib -Wl,-rpath $(BOOST)/lib
 
 CPPFLAGS := -O3 -Wall -std=c++11 -Wextra -Winline -Winit-self -Wno-sequence-point\
@@ -53,15 +55,15 @@ CPPFLAGS := -O3 -Wall -std=c++11 -Wextra -Winline -Winit-self -Wno-sequence-poin
 
 PROGRAMS := predictor
 
-objects = predictor.o main.o 
+sources = main.cc predictor.cc PredicateMap.cc bt9.cc
 
 all: $(PROGRAMS)
 
-predictor : $(objects)
+predictor : $(sources)
 	$(CXX) $(CPPFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 dbg: clean
 	$(MAKE) DBG_BUILD=1 all
 
 clean:
-	rm -f $(PROGRAMS) $(objects)
+	rm -f $(PROGRAMS)

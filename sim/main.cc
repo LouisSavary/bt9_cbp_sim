@@ -18,6 +18,7 @@ using namespace std;
 #include "bt9_reader.h"
 //#include "predictor.cc"
 #include "predictor.h"
+#include "PredicateMap.h"
 
 #define COUNTER unsigned long long
 //#define NB_PRE_PRED 6
@@ -44,6 +45,10 @@ typedef uint16_t hotspot_t;
 #define TRACE_CACHE_SIZE 3       // because we only have three address between two instruction addresses
 #define PREDICATE_MAX_LENGTH 256 // bytes -> 64 instructions
 #define PREDICATE_CONF_THRES 0.7 
+
+template <>
+class bt9::StrEnumMap<bt9::BrBehavior::Indirectness>;
+
 
 typedef struct
 {
@@ -264,6 +269,8 @@ uint32_t updateGHR(uint32_t GHR, bool taken)
   return ((GHR >> 1) | taken << 31); //& mask32(GHR_LENGTH + TRACE_LENGTH);
 }
 
+class PredicateMap;
+
 int main(int argc, char *argv[])
 {
 
@@ -425,6 +432,8 @@ int main(int argc, char *argv[])
   bt9::BT9Reader future_reader(trace_path);
   bt9::BT9Reader::BranchInstanceIterator future_it = future_reader.begin();
 
+  PredicateMap::setFlowGraph(&bt9_reader);
+  
   // MAIN LOOP
   for (auto it = bt9_reader.begin(); it != bt9_reader.end(); ++it)
   {
@@ -824,6 +833,8 @@ int main(int argc, char *argv[])
             bool is_block_predicated = false;
             if (snd_pred.getConfidence() <= env_predicate_conf)
             { // predication processing
+
+
               if (predication[node_it->brNodeIndex()].branch_id != 0)
               {
                 // add predication block to new_trace
@@ -831,11 +842,16 @@ int main(int argc, char *argv[])
               }
               else
               {
+
+                cond_struct_t predicate = PredicateMap::getPredicate(node_it->brNodeIndex());
+                if (!predicate.is_default) {
+                  printf("%6u %6u %d %d\n", node_it->brNodeIndex(), predicate.dest_node, 1*predicate.is_not_taken_predicated,1*predicate.is_taken_predicated);
+                }
                 // IF block detection : forward conditional branch
                 // condition not heavily biaised => certainly data dependent => predication instead of prediction
                 bt9::BT9ReaderEdgeRecord *taken_edge = node_it.getNextEdge(true);
                 // length constraint ?
-                bool is_forward = taken_edge != nullptr && taken_edge->brVirtualTarget() > node_it->brVirtualAddr();// && taken_edge->brVirtualTarget() < node_it->brVirtualAddr() + PREDICATE_MAX_LENGTH;
+                bool is_forward = taken_edge != nullptr && taken_edge->brVirtualTarget() > node_it->brVirtualAddr()+4;// && taken_edge->brVirtualTarget() < node_it->brVirtualAddr() + PREDICATE_MAX_LENGTH;
 
                 if (is_forward)
                 {
@@ -844,9 +860,6 @@ int main(int argc, char *argv[])
 
                   if (not_taken_edge != nullptr)
                   {
-                    bt9::BT9Reader::NodeTableIterator pre_else_node(&bt9_reader, not_taken_edge->destNodeIndex());
-                    bt9::BT9ReaderEdgeRecord *over_else_path = pre_else_node.getNextEdge(true);
-
                     bool if_block = not_taken_edge->destNodeIndex() == taken_edge->destNodeIndex();
 
                     // construct *if* predication block
@@ -861,28 +874,52 @@ int main(int argc, char *argv[])
                    
                       predication[node_it->brNodeIndex()] = predicate;
                     }
-                    else if (over_else_path != nullptr)
+                    else 
                     {
-                      bool if_else_block = !if_block && pre_else_node->brClassConditionalityIs("UCD") && over_else_path->destNodeIndex() == taken_edge->destNodeIndex();
 
-                      // construct *if_else* predication block
-                      if (if_else_block)
+                      bt9::BT9Reader::NodeTableIterator pre_else_node(&bt9_reader, not_taken_edge->destNodeIndex());
+                      bt9::BT9ReaderEdgeRecord *over_else_path = pre_else_node.getNextEdge(true);
+
+                      // if (over_else_path != nullptr && pre_else_node->brClass().conditionality == bt9::BrClass::Conditionality::UNCONDITIONAL)
+                      if (over_else_path != nullptr && pre_else_node->brClassConditionalityIs("UCD"))
                       {
-                        is_block_predicated = true;
-                        global_predicated_nb ++;
+                        // bool uncond = pre_else_node->brClassConditionalityIs("UCD");
+                        bt9::BT9Reader::NodeTableIterator end_node(&bt9_reader, taken_edge->destNodeIndex());
+                        bt9::BT9ReaderEdgeRecord *after_else_path = end_node.getNextEdge(true);
+                        bool back_branch = after_else_path != nullptr && end_node->brClassConditionalityIs("UCD");
 
-                        predicated_block_t predicate;
-                        predicate.branch_id = node_it->brNodeIndex();
-                        predicate.edge_id = taken_edge->edgeIndex();
-                        predicate.then_length = (taken_edge->brVirtualTarget() - node_it->brVirtualAddr()) / 4;
-                       
-                        predicate.over_else_edge_id = over_else_path->edgeIndex();
-                        predicate.has_else = true;
-                        predicate.else_length = (over_else_path->brVirtualTarget() - pre_else_node->brVirtualAddr() / 4);
+                        bool forward = over_else_path->brVirtualTarget() > pre_else_node->brVirtualAddr() + 4; // meh
+                        bool coherent_f = forward && over_else_path->destNodeIndex() == taken_edge->destNodeIndex();
+                        bool coherent_b = !forward && back_branch && over_else_path->brVirtualTarget() == after_else_path->brVirtualTarget(); 
+                        bool coherent = coherent_f || coherent_b;
+
+                        bool exclusiv = taken_edge->brVirtualTarget() == pre_else_node->brVirtualAddr() + 4;
+
+                        bool if_else_block = coherent & exclusiv;
+                        // bool if_else_block = pre_else_node->brClassConditionalityIs("UCD") && over_else_path->destNodeIndex() == taken_edge->destNodeIndex();
+                        // bool if_else_block = over_else_path->destNodeIndex() == taken_edge->destNodeIndex();
+
+                        // construct *if_else* predication block
+                        if (if_else_block)
+                        {
+                          is_block_predicated = true;
+                          global_predicated_nb ++;
+                          printf("else block\n");
+                          predicated_block_t predicate;
+                          predicate.branch_id = node_it->brNodeIndex();
+                          predicate.edge_id = taken_edge->edgeIndex();
+                          predicate.then_length = (taken_edge->brVirtualTarget() - node_it->brVirtualAddr()) / 4;
                         
-                        predication[node_it->brNodeIndex()] = predicate;
-                      }
-                    } 
+                          predicate.over_else_edge_id = over_else_path->edgeIndex();
+                          predicate.has_else = true;
+                          predicate.else_length = (over_else_path->brVirtualTarget() - pre_else_node->brVirtualAddr() / 4);
+                          
+                          predication[node_it->brNodeIndex()] = predicate;
+                        } else {
+                          // printf("%llu %u %u %u %lx\n", global_predicated_nb, coherent, exclusiv, forward, node_it->brVirtualAddr());
+                        }
+                      } 
+                    }
                   }
                 }
               }
